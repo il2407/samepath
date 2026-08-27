@@ -39,6 +39,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
   const [sharePhone, setSharePhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [shareFullName, setShareFullName] = useState(false);
+  const [fullName, setFullName] = useState("");
 
   const [resumeRetention, setResumeRetention] = useState<"DELETE_AFTER_CONFIRMATION" | "KEEP">(
     "DELETE_AFTER_CONFIRMATION",
@@ -67,6 +68,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
     for (const b of blocks) {
       if (!b.company) return setError("יש לבחור חברה עבור כל שורת חסימה, או להסיר שורה ריקה");
     }
+    if (shareFullName && !fullName.trim()) return setError("יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי");
 
     startTransition(async () => {
       const result = await completePrivacyOnboardingAction({
@@ -80,6 +82,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
         preMatchDisplayMode: displayMode,
         aliasText: displayMode === "ALIAS" ? aliasText.trim() : undefined,
         firstName: displayMode === "FIRST_NAME" ? firstName.trim() : undefined,
+        fullName: fullName.trim() || undefined,
         shareFullNamePostMatch: shareFullName,
         sharePhotoPostMatch: false,
         shareLinkedInPostMatch: shareLinkedIn,
@@ -200,7 +203,17 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
         <p className="text-sm text-muted">
           כל הפרטים הבאים מוסתרים כברירת מחדל. סמנו רק את מה שתרצו לחשוף — ותמיד תוכלו לשנות בהמשך.
         </p>
-        <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
+        <div>
+          <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
+          {shareFullName && (
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="שם מלא"
+              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
+            />
+          )}
+        </div>
         <div>
           <ToggleRow label="קישור ל-LinkedIn" checked={shareLinkedIn} onChange={setShareLinkedIn} />
           {shareLinkedIn && (

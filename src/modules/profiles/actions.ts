@@ -56,6 +56,7 @@ const privacyStepSchema = z
     preMatchDisplayMode: z.enum(["ALIAS", "FIRST_NAME"]),
     aliasText: z.string().optional(),
     firstName: z.string().optional(),
+    fullName: z.string().optional(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
     shareLinkedInPostMatch: z.boolean(),
@@ -77,6 +78,10 @@ const privacyStepSchema = z
   .refine((data) => data.preMatchDisplayMode !== "FIRST_NAME" || !!data.firstName?.trim(), {
     message: "יש להזין שם פרטי",
     path: ["firstName"],
+  })
+  .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
+    message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
+    path: ["fullName"],
   });
 
 export async function completePrivacyOnboardingAction(input: unknown): Promise<ActionState> {

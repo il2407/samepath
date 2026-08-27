@@ -10,9 +10,19 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     <div className="min-h-screen bg-paper">
       <header className="border-b border-border bg-white">
         <Container className="flex h-16 items-center justify-between">
-          <Link href="/app" className="text-lg font-bold text-ink">
-            SamePath
-          </Link>
+          <div className="flex items-center gap-8">
+            <Link href="/app" className="text-lg font-bold text-ink">
+              SamePath
+            </Link>
+            <nav className="hidden items-center gap-6 text-sm text-muted sm:flex">
+              <Link href="/app/matches" className="hover:text-ink">
+                הצעות התאמה
+              </Link>
+              <Link href="/app/connections" className="hover:text-ink">
+                חיבורים
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-muted">{user.email}</span>
             <form action={logoutAction}>

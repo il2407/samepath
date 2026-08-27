@@ -467,6 +467,9 @@ model IdentityDisclosurePreference {
   preMatchDisplayMode DisplayNamePreference @default(ALIAS)
   aliasText           String?
   firstName           String?
+  /// Real full name, private, collected once here so shareFullNamePostMatch
+  /// has something to reveal — never read by any pre-match code path.
+  fullName            String?
 
   shareFullNamePostMatch        Boolean @default(false)
   sharePhotoPostMatch           Boolean @default(false)

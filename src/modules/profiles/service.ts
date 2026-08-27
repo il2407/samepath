@@ -130,6 +130,7 @@ export interface PrivacyStepInput {
   preMatchDisplayMode: DisplayNamePreference;
   aliasText?: string;
   firstName?: string;
+  fullName?: string;
   shareFullNamePostMatch: boolean;
   sharePhotoPostMatch: boolean;
   shareLinkedInPostMatch: boolean;
@@ -186,6 +187,7 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         preMatchDisplayMode: input.preMatchDisplayMode,
         aliasText: input.aliasText,
         firstName: input.firstName,
+        fullName: input.fullName,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,
@@ -200,6 +202,7 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         preMatchDisplayMode: input.preMatchDisplayMode,
         aliasText: input.aliasText,
         firstName: input.firstName,
+        fullName: input.fullName,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,

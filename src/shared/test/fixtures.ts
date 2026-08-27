@@ -25,6 +25,12 @@ export interface TestUserOptions {
   availability?: AvailabilitySlotInput[];
   blockedCompanyIds?: string[];
   blockedUserIds?: string[];
+  professionalFieldId?: string;
+  targetRoleIds?: string[];
+  tagIds?: string[];
+  languageIds?: string[];
+  experienceMonths?: number;
+  aliasText?: string;
 }
 
 /** Creates a User + ProfessionalProfile (with privacy/connection prefs) ready for domain tests. */
@@ -43,6 +49,8 @@ export async function createTestUser(options: TestUserOptions = {}) {
       status: options.profileStatus ?? "ACTIVE",
       currentCompanyId: options.companyId,
       currentCompanyConfirmedAt: options.companyConfirmed ? new Date() : undefined,
+      professionalFieldId: options.professionalFieldId,
+      experienceMonths: options.experienceMonths ?? 0,
       privacyPreference: {
         create: { blockEntireCorporateGroup: options.blockEntireCorporateGroup ?? true },
       },
@@ -52,8 +60,18 @@ export async function createTestUser(options: TestUserOptions = {}) {
           timezone: options.timezone ?? "Asia/Jerusalem",
         },
       },
+      disclosurePreference: {
+        create: { preMatchDisplayMode: "ALIAS", aliasText: options.aliasText ?? "מ." },
+      },
       availabilitySlots: options.availability
         ? { create: options.availability.map((s) => ({ dayOfWeek: s.dayOfWeek, startMinute: s.startMinute, endMinute: s.endMinute })) }
+        : undefined,
+      targetRoles: options.targetRoleIds
+        ? { create: options.targetRoleIds.map((targetRoleId) => ({ targetRoleId })) }
+        : undefined,
+      tags: options.tagIds ? { create: options.tagIds.map((tagId) => ({ tagId })) } : undefined,
+      languages: options.languageIds
+        ? { create: options.languageIds.map((languageId) => ({ languageId })) }
         : undefined,
     },
   });
