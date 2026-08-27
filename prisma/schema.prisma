@@ -1,0 +1,1517 @@
+// SamePath data model.
+// Organized to mirror the domain modules in src/modules/*.
+// Naming: PascalCase models, camelCase fields, SCREAMING_SNAKE enum values.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// Reference / lookup data (extensible without schema changes: add rows, not columns)
+// =============================================================================
+
+model ProfessionalField {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  labelHe   String
+  labelEn   String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  targetRoles          TargetRole[]
+  profiles             ProfessionalProfile[]
+  groups               Group[]
+  interviewExperiences InterviewExperience[]
+
+  @@map("professional_fields")
+}
+
+model TargetRole {
+  id                  String            @id @default(cuid())
+  code                String            @unique
+  professionalFieldId String
+  professionalField   ProfessionalField @relation(fields: [professionalFieldId], references: [id])
+  labelHe             String
+  labelEn             String
+  isActive            Boolean           @default(true)
+  sortOrder           Int               @default(0)
+  createdAt           DateTime          @default(now())
+
+  profileTargetRoles   ProfileTargetRole[]
+  groups               Group[]
+  interviewExperiences InterviewExperience[]
+
+  @@index([professionalFieldId])
+  @@map("target_roles")
+}
+
+model SeniorityBand {
+  id        String  @id @default(cuid())
+  code      String  @unique
+  labelHe   String
+  labelEn   String
+  minMonths Int
+  maxMonths Int?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  profiles             ProfessionalProfile[]
+  groupsMin            Group[]               @relation("GroupMinSeniority")
+  groupsMax            Group[]               @relation("GroupMaxSeniority")
+  interviewExperiences InterviewExperience[]
+
+  @@map("seniority_bands")
+}
+
+model Language {
+  id      String @id @default(cuid())
+  code    String @unique
+  labelHe String
+  labelEn String
+
+  profileLanguages ProfileLanguage[]
+  connectionPrefs  ConnectionPreference[]
+  groups           Group[]
+
+  @@map("languages")
+}
+
+model Region {
+  id      String @id @default(cuid())
+  code    String @unique
+  labelHe String
+  labelEn String
+  kind    String // COUNTRY | BROAD_AREA
+
+  profiles             ProfessionalProfile[]
+  interviewExperiences InterviewExperience[]
+
+  @@map("regions")
+}
+
+enum TagKind {
+  SKILL
+  DOMAIN
+  TOPIC
+}
+
+/// Unified lookup for skills, domains and interview-question topics.
+/// A single "kind"-discriminated table keeps the compatibility engine's
+/// combined "skills/domains overlap" bucket a simple set intersection.
+model Tag {
+  id        String   @id @default(cuid())
+  kind      TagKind
+  slug      String
+  labelHe   String
+  labelEn   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  profileTags    ProfileTag[]
+  experienceTags InterviewExperienceTopic[]
+  questionTags   InterviewQuestionTopic[]
+
+  @@unique([kind, slug])
+  @@map("tags")
+}
+
+// =============================================================================
+// Identity, auth & sessions
+// =============================================================================
+
+enum UserStatus {
+  ACTIVE
+  PAUSED
+  SUSPENDED
+  DELETED
+}
+
+enum UserRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  emailVerifiedAt DateTime?
+  status          UserStatus @default(ACTIVE)
+  role            UserRole   @default(MEMBER)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  lastLoginAt     DateTime?
+  deletedAt       DateTime?
+
+  authIdentities         AuthIdentity[]
+  sessions               Session[]
+  emailVerifications     EmailVerification[]
+  professionalProfile    ProfessionalProfile?
+  resumeUploads          ResumeUpload[]
+  resumeExtractionDrafts ResumeExtractionDraft[]
+  userConfirmations      UserConfirmation[]
+
+  blockedCompanies         BlockedCompany[]
+  blockingAsBlocker        BlockedUser[]          @relation("BlockedUserBlocker")
+  blockingAsBlocked        BlockedUser[]          @relation("BlockedUserBlocked")
+  privacyAuditsAsSubject   PrivacyDecisionAudit[] @relation("PrivacyAuditSubject")
+  privacyAuditsAsCandidate PrivacyDecisionAudit[] @relation("PrivacyAuditCandidate")
+
+  matchSuggestionsAsA   MatchSuggestion[]   @relation("MatchSuggestionUserA")
+  matchSuggestionsAsB   MatchSuggestion[]   @relation("MatchSuggestionUserB")
+  matchDecisions        MatchDecision[]
+  connectionsAsA        Connection[]        @relation("ConnectionUserA")
+  connectionsAsB        Connection[]        @relation("ConnectionUserB")
+  sentMessages          ConnectionMessage[]
+  meetingStatusesMarked MeetingStatus[]
+
+  reportsFiled    Report[] @relation("ReportReporter")
+  reportsAgainst  Report[] @relation("ReportReportedUser")
+  reportsResolved Report[] @relation("ReportResolver")
+
+  groupMemberships GroupMembership[]
+  groupWaitlist    GroupWaitlistEntry[]
+  groupsCreated    Group[]              @relation("GroupCreatedBy")
+  guidesCreated    SessionGuide[]       @relation("GuideCreatedBy")
+
+  interviewExperiences     InterviewExperience[]         @relation("ExperienceAuthor")
+  contributionReviews      ContributionReview[]
+  revisionRequests         ContributionRevisionRequest[]
+  contributionAttestations ContributionAttestation[]
+  contributionValidations  ContributionValidation[]
+  contentReports           ContentReport[]
+  moderationActions        ModerationAction[]
+  takedownsResolved        TakedownRequest[]
+
+  creditLedgerEntries CreditLedgerEntry[]
+  creditConversions   CreditConversion[]
+  payments            Payment[]
+  accessPasses        AccessPass[]
+  notificationLogs    NotificationLog[]
+
+  @@map("users")
+}
+
+enum AuthProviderType {
+  EMAIL
+}
+
+/// One row per login method a user has configured. Only EMAIL is used in the
+/// MVP (passwordless code/link); the table exists so OAuth providers can be
+/// added later without a data-model change.
+model AuthIdentity {
+  id                String           @id @default(cuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          AuthProviderType
+  providerAccountId String
+  passwordHash      String?
+  createdAt         DateTime         @default(now())
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  lastUsedAt DateTime  @default(now())
+  userAgent  String?
+  ipHash     String?
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum VerificationPurpose {
+  REGISTER
+  LOGIN
+  EMAIL_CHANGE
+}
+
+model EmailVerification {
+  id         String              @id @default(cuid())
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    VerificationPurpose
+  codeHash   String
+  tokenHash  String              @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int                 @default(0)
+  requestIp  String?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId, purpose])
+  @@map("email_verifications")
+}
+
+// =============================================================================
+// Professional profile
+// =============================================================================
+
+enum ProfileStatus {
+  DRAFT
+  PENDING_PRIVACY
+  INCOMPLETE
+  ACTIVE
+  PAUSED
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  PAUSED
+}
+
+enum ResumeRetentionPreference {
+  DELETE_AFTER_CONFIRMATION
+  KEEP
+}
+
+model ProfessionalProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  professionalFieldId String?
+  professionalField   ProfessionalField? @relation(fields: [professionalFieldId], references: [id])
+  currentRoleTitle    String?
+
+  seniorityBandId  String?
+  seniorityBand    SeniorityBand? @relation(fields: [seniorityBandId], references: [id])
+  experienceMonths Int            @default(0)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id])
+
+  shortIntro String? @db.VarChar(400)
+
+  availabilityStatus AvailabilityStatus @default(AVAILABLE)
+  status             ProfileStatus      @default(DRAFT)
+
+  currentCompanyId          String?
+  currentCompany            Company?  @relation(fields: [currentCompanyId], references: [id])
+  currentCompanyConfirmedAt DateTime?
+
+  resumeRetentionPreference ResumeRetentionPreference @default(DELETE_AFTER_CONFIRMATION)
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  targetRoles          ProfileTargetRole[]
+  tags                 ProfileTag[]
+  languages            ProfileLanguage[]
+  employmentPositions  EmploymentPosition[]
+  availabilitySlots    AvailabilitySlot[]
+  connectionPreference ConnectionPreference?
+  disclosurePreference IdentityDisclosurePreference?
+  privacyPreference    PrivacyPreference?
+
+  matchSuggestionsAsA MatchSuggestion[] @relation("ProfileA")
+  matchSuggestionsAsB MatchSuggestion[] @relation("ProfileB")
+
+  @@index([professionalFieldId, status])
+  @@index([currentCompanyId])
+  @@map("professional_profiles")
+}
+
+model ProfileTargetRole {
+  id           String              @id @default(cuid())
+  profileId    String
+  profile      ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  targetRoleId String
+  targetRole   TargetRole          @relation(fields: [targetRoleId], references: [id])
+
+  @@unique([profileId, targetRoleId])
+  @@map("profile_target_roles")
+}
+
+model ProfileTag {
+  id        String              @id @default(cuid())
+  profileId String
+  profile   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag                 @relation(fields: [tagId], references: [id])
+
+  @@unique([profileId, tagId])
+  @@map("profile_tags")
+}
+
+model ProfileLanguage {
+  id         String              @id @default(cuid())
+  profileId  String
+  profile    ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  languageId String
+  language   Language            @relation(fields: [languageId], references: [id])
+
+  @@unique([profileId, languageId])
+  @@map("profile_languages")
+}
+
+enum EmploymentSource {
+  RESUME
+  MANUAL
+}
+
+model EmploymentPosition {
+  id        String              @id @default(cuid())
+  profileId String
+  profile   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id])
+  companyRaw String
+
+  title     String
+  startDate DateTime
+  endDate   DateTime?
+  isCurrent Boolean          @default(false)
+  source    EmploymentSource @default(MANUAL)
+  createdAt DateTime         @default(now())
+
+  @@index([profileId])
+  @@index([companyId])
+  @@map("employment_positions")
+}
+
+model AvailabilitySlot {
+  id          String              @id @default(cuid())
+  profileId   String
+  profile     ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int // 0 = Sunday .. 6 = Saturday
+  startMinute Int // minutes from midnight, local to ConnectionPreference.timezone
+  endMinute   Int
+
+  @@index([profileId])
+  @@map("availability_slots")
+}
+
+enum ConnectionFormatPreference {
+  ONE_ON_ONE
+  GROUP
+  BOTH
+}
+
+enum ConnectionCadence {
+  ONE_TIME
+  RECURRING
+  BOTH
+}
+
+enum ConnectionModePreference {
+  ONLINE
+  IN_PERSON
+  BOTH
+}
+
+enum ConnectionReason {
+  SHARE_JOB_SEARCH
+  ACCOUNTABILITY
+  PROFESSIONAL_DISCUSSION
+  LEARNING_TOGETHER
+  CODING_PRACTICE
+  SYSTEM_DESIGN
+  INTERVIEW_SIMULATION
+  OTHER
+}
+
+model ConnectionPreference {
+  id        String              @id @default(cuid())
+  profileId String              @unique
+  profile   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  peerMinExperienceMonths Int @default(0)
+  peerMaxExperienceMonths Int @default(240)
+
+  format  ConnectionFormatPreference @default(BOTH)
+  cadence ConnectionCadence          @default(BOTH)
+  mode    ConnectionModePreference   @default(BOTH)
+
+  languageId String?
+  language   Language? @relation(fields: [languageId], references: [id])
+  timezone   String    @default("Asia/Jerusalem")
+
+  reasons ConnectionReason[]
+
+  updatedAt DateTime @updatedAt
+
+  @@map("connection_preferences")
+}
+
+enum DisplayNamePreference {
+  ALIAS
+  FIRST_NAME
+}
+
+/// Controls progressive identity disclosure: pre-match fields are never sent
+/// to the client at all (see DTO layer), post-match fields are only included
+/// once the corresponding boolean is true AND the connection is mutual.
+model IdentityDisclosurePreference {
+  id        String              @id @default(cuid())
+  profileId String              @unique
+  profile   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  preMatchDisplayMode DisplayNamePreference @default(ALIAS)
+  aliasText           String?
+  firstName           String?
+
+  shareFullNamePostMatch        Boolean @default(false)
+  sharePhotoPostMatch           Boolean @default(false)
+  shareLinkedInPostMatch        Boolean @default(false)
+  linkedInUrl                   String?
+  sharePreciseLocationPostMatch Boolean @default(false)
+  shareEmailPostMatch           Boolean @default(false)
+  sharePhonePostMatch           Boolean @default(false)
+  phoneNumber                   String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("identity_disclosure_preferences")
+}
+
+// =============================================================================
+// Company & privacy
+// =============================================================================
+
+enum CompanyNormalizationStatus {
+  CONFIRMED
+  NEEDS_REVIEW
+  MERGED
+}
+
+model CorporateGroup {
+  id        String    @id @default(cuid())
+  name      String
+  createdAt DateTime  @default(now())
+  companies Company[]
+
+  @@map("corporate_groups")
+}
+
+model Company {
+  id                  String                     @id @default(cuid())
+  canonicalName       String
+  domain              String?                    @unique
+  corporateGroupId    String?
+  corporateGroup      CorporateGroup?            @relation(fields: [corporateGroupId], references: [id])
+  normalizationStatus CompanyNormalizationStatus @default(CONFIRMED)
+  mergedIntoId        String?
+  mergedInto          Company?                   @relation("CompanyMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom          Company[]                  @relation("CompanyMerge")
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  aliases              CompanyAlias[]
+  profilesCurrentAt    ProfessionalProfile[]
+  employmentPositions  EmploymentPosition[]
+  blockedByUsers       BlockedCompany[]
+  interviewExperiences InterviewExperience[]
+  takedownRequests     TakedownRequest[]
+
+  @@index([corporateGroupId])
+  @@map("companies")
+}
+
+model CompanyAlias {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  alias     String
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, alias])
+  @@index([alias])
+  @@map("company_aliases")
+}
+
+enum BlockedCompanyReason {
+  FORMER_EMPLOYER
+  INTERVIEWING
+  CLIENT_OR_VENDOR
+  OTHER
+}
+
+model BlockedCompany {
+  id        String               @id @default(cuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company              @relation(fields: [companyId], references: [id])
+  reason    BlockedCompanyReason
+  note      String?
+  createdAt DateTime             @default(now())
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@map("blocked_companies")
+}
+
+model BlockedUser {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation("BlockedUserBlocker", fields: [userId], references: [id], onDelete: Cascade)
+  blockedUserId String
+  blockedUser   User     @relation("BlockedUserBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, blockedUserId])
+  @@index([blockedUserId])
+  @@map("blocked_users")
+}
+
+/// Confirmed employer + corporate-group-blocking default. Kept separate from
+/// IdentityDisclosurePreference because it governs eligibility (hard filters),
+/// not what gets shown to a match.
+model PrivacyPreference {
+  id                        String              @id @default(cuid())
+  profileId                 String              @unique
+  profile                   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  blockEntireCorporateGroup Boolean             @default(true)
+  onboardingCompletedAt     DateTime?
+  updatedAt                 DateTime            @updatedAt
+
+  @@map("privacy_preferences")
+}
+
+enum PrivacyAuditContext {
+  MATCH
+  GROUP
+  SESSION
+  CONNECTION
+}
+
+enum PrivacyAuditDecision {
+  ALLOW
+  REJECT
+}
+
+/// Internal-only audit trail of every privacy-gate evaluation. Reason codes
+/// here are for admin diagnostics ONLY and must never be surfaced to users
+/// (see privacy engine requirement: never reveal why something was hidden).
+model PrivacyDecisionAudit {
+  id              String               @id @default(cuid())
+  subjectUserId   String
+  subjectUser     User                 @relation("PrivacyAuditSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  candidateUserId String?
+  candidateUser   User?                @relation("PrivacyAuditCandidate", fields: [candidateUserId], references: [id])
+  context         PrivacyAuditContext
+  contextId       String?
+  decision        PrivacyAuditDecision
+  reasonCode      String
+  createdAt       DateTime             @default(now())
+
+  @@index([subjectUserId, createdAt])
+  @@map("privacy_decision_audits")
+}
+
+// =============================================================================
+// Resume upload & extraction
+// =============================================================================
+
+enum ResumeUploadStatus {
+  UPLOADED
+  SCANNING
+  READY
+  REJECTED
+  DELETED
+}
+
+model ResumeUpload {
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageKey       String
+  originalFilename String
+  mimeType         String
+  sizeBytes        Int
+  status           ResumeUploadStatus @default(UPLOADED)
+  uploadedAt       DateTime           @default(now())
+  deletedAt        DateTime?
+
+  extractionJob ResumeExtractionJob?
+
+  @@index([userId])
+  @@map("resume_uploads")
+}
+
+enum ResumeJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model ResumeExtractionJob {
+  id             String          @id @default(cuid())
+  resumeUploadId String          @unique
+  resumeUpload   ResumeUpload    @relation(fields: [resumeUploadId], references: [id], onDelete: Cascade)
+  status         ResumeJobStatus @default(QUEUED)
+  attempt        Int             @default(0)
+  error          String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime        @default(now())
+
+  draft ResumeExtractionDraft?
+
+  @@map("resume_extraction_jobs")
+}
+
+enum ParserSource {
+  DETERMINISTIC
+  AI
+}
+
+model ResumeExtractionDraft {
+  id                    String              @id @default(cuid())
+  resumeExtractionJobId String              @unique
+  resumeExtractionJob   ResumeExtractionJob @relation(fields: [resumeExtractionJobId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extractedJson         Json
+  parserVersion         String
+  parserSource          ParserSource
+  confirmedAt           DateTime?
+  createdAt             DateTime            @default(now())
+
+  @@index([userId])
+  @@map("resume_extraction_drafts")
+}
+
+enum ConfirmationType {
+  EMPLOYER_CONFIRMED
+  RESUME_DRAFT_CONFIRMED
+  PRIVACY_ONBOARDING_CONFIRMED
+}
+
+model UserConfirmation {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      ConfirmationType
+  payload   Json?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, type])
+  @@map("user_confirmations")
+}
+
+// =============================================================================
+// Matching & connections
+// =============================================================================
+
+enum MatchStatus {
+  PROPOSED
+  INTERESTED_BY_A
+  INTERESTED_BY_B
+  MUTUALLY_ACCEPTED
+  PAYMENT_PENDING
+  ACCESS_CHECK
+  ACTIVE
+  DECLINED
+  EXPIRED
+  BLOCKED
+  REPORTED
+  CANCELLED
+}
+
+model MatchSuggestion {
+  id      String @id @default(cuid())
+  userAId String
+  userA   User   @relation("MatchSuggestionUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId String
+  userB   User   @relation("MatchSuggestionUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  profileAId String
+  profileA   ProfessionalProfile @relation("ProfileA", fields: [profileAId], references: [id])
+  profileBId String
+  profileB   ProfessionalProfile @relation("ProfileB", fields: [profileBId], references: [id])
+
+  status    MatchStatus @default(PROPOSED)
+  version   Int         @default(0)
+  createdAt DateTime    @default(now())
+  expiresAt DateTime
+  decidedAt DateTime?
+
+  scoreBreakdown MatchScoreBreakdown?
+  decisions      MatchDecision[]
+  connection     Connection?
+  reports        Report[]
+
+  @@index([userAId, status])
+  @@index([userBId, status])
+  @@map("match_suggestions")
+}
+
+/// Internal-only score breakdown, used for admin diagnostics and tests.
+/// Never exposed directly to end users (see safe human-readable reasons).
+model MatchScoreBreakdown {
+  id                String          @id @default(cuid())
+  matchSuggestionId String          @unique
+  matchSuggestion   MatchSuggestion @relation(fields: [matchSuggestionId], references: [id], onDelete: Cascade)
+
+  targetRoleScore   Float
+  fieldScore        Float
+  experienceScore   Float
+  availabilityScore Float
+  skillsScore       Float
+  languageScore     Float
+  totalScore        Float
+  weightsVersion    String
+  computedAt        DateTime @default(now())
+
+  @@map("match_score_breakdowns")
+}
+
+enum MatchDecisionType {
+  INTERESTED
+  NOT_NOW
+  NOT_RELEVANT
+  NEVER_AGAIN
+  REPORT
+}
+
+model MatchDecision {
+  id                String            @id @default(cuid())
+  matchSuggestionId String
+  matchSuggestion   MatchSuggestion   @relation(fields: [matchSuggestionId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decision          MatchDecisionType
+  createdAt         DateTime          @default(now())
+
+  @@unique([matchSuggestionId, userId])
+  @@map("match_decisions")
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  ENDED
+  BLOCKED
+  REPORTED
+}
+
+model Connection {
+  id                String           @id @default(cuid())
+  matchSuggestionId String           @unique
+  matchSuggestion   MatchSuggestion  @relation(fields: [matchSuggestionId], references: [id])
+  userAId           String
+  userA             User             @relation("ConnectionUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId           String
+  userB             User             @relation("ConnectionUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  status            ConnectionStatus @default(ACTIVE)
+  createdAt         DateTime         @default(now())
+  endedAt           DateTime?
+
+  messages        ConnectionMessage[]
+  meetingStatuses MeetingStatus[]
+  reports         Report[]
+
+  @@index([userAId, status])
+  @@index([userBId, status])
+  @@map("connections")
+}
+
+model ConnectionMessage {
+  id           String     @id @default(cuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  senderId     String
+  sender       User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body         String     @db.VarChar(4000)
+  createdAt    DateTime   @default(now())
+
+  @@index([connectionId, createdAt])
+  @@map("connection_messages")
+}
+
+model MeetingStatus {
+  id             String     @id @default(cuid())
+  connectionId   String
+  connection     Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  scheduledAt    DateTime?
+  completedAt    DateTime?
+  markedByUserId String?
+  markedBy       User?      @relation(fields: [markedByUserId], references: [id])
+  note           String?
+  createdAt      DateTime   @default(now())
+
+  @@index([connectionId])
+  @@map("meeting_statuses")
+}
+
+enum ReportCategory {
+  SAFETY_CONCERN
+  HARASSMENT
+  SPAM
+  FAKE_PROFILE
+  PRIVACY_CONCERN
+  NO_SHOW
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id                String           @id @default(cuid())
+  reporterId        String
+  reporter          User             @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId    String?
+  reportedUser      User?            @relation("ReportReportedUser", fields: [reportedUserId], references: [id])
+  connectionId      String?
+  connection        Connection?      @relation(fields: [connectionId], references: [id])
+  matchSuggestionId String?
+  matchSuggestion   MatchSuggestion? @relation(fields: [matchSuggestionId], references: [id])
+  groupId           String?
+  group             Group?           @relation(fields: [groupId], references: [id])
+  category          ReportCategory
+  description       String           @db.VarChar(2000)
+  status            ReportStatus     @default(OPEN)
+  createdAt         DateTime         @default(now())
+  resolvedAt        DateTime?
+  resolvedByUserId  String?
+  resolvedBy        User?            @relation("ReportResolver", fields: [resolvedByUserId], references: [id])
+  resolutionNote    String?
+
+  @@index([status])
+  @@index([reportedUserId])
+  @@map("reports")
+}
+
+// =============================================================================
+// Groups
+// =============================================================================
+
+enum GroupMode {
+  ONLINE
+  IN_PERSON
+}
+
+enum GroupStatus {
+  DRAFT
+  OPEN
+  FULL
+  CLOSED
+  ARCHIVED
+}
+
+model Group {
+  id                  String             @id @default(cuid())
+  title               String
+  professionalFieldId String?
+  professionalField   ProfessionalField? @relation(fields: [professionalFieldId], references: [id])
+  targetRoleId        String?
+  targetRole          TargetRole?        @relation(fields: [targetRoleId], references: [id])
+  minSeniorityBandId  String?
+  minSeniorityBand    SeniorityBand?     @relation("GroupMinSeniority", fields: [minSeniorityBandId], references: [id])
+  maxSeniorityBandId  String?
+  maxSeniorityBand    SeniorityBand?     @relation("GroupMaxSeniority", fields: [maxSeniorityBandId], references: [id])
+  languageId          String?
+  language            Language?          @relation(fields: [languageId], references: [id])
+  timezone            String             @default("Asia/Jerusalem")
+  mode                GroupMode          @default(ONLINE)
+  schedule            String?
+  capacityMin         Int                @default(4)
+  capacityMax         Int                @default(6)
+  status              GroupStatus        @default(DRAFT)
+  theme               String?
+  seriesLength        Int?
+  guideId             String?
+  guide               SessionGuide?      @relation(fields: [guideId], references: [id])
+  createdByUserId     String?
+  createdBy           User?              @relation("GroupCreatedBy", fields: [createdByUserId], references: [id])
+  version             Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  memberships GroupMembership[]
+  waitlist    GroupWaitlistEntry[]
+  reports     Report[]
+
+  @@index([status])
+  @@map("groups")
+}
+
+enum GroupMembershipStatus {
+  REQUESTED
+  APPROVED
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+model GroupMembership {
+  id       String                @id @default(cuid())
+  groupId  String
+  group    Group                 @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status   GroupMembershipStatus @default(REQUESTED)
+  joinedAt DateTime              @default(now())
+  leftAt   DateTime?
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_memberships")
+}
+
+model GroupWaitlistEntry {
+  id         String    @id @default(cuid())
+  groupId    String
+  group      Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  notifiedAt DateTime?
+
+  @@unique([groupId, userId])
+  @@map("group_waitlist_entries")
+}
+
+// =============================================================================
+// Optional session guides
+// =============================================================================
+
+enum GuideFormat {
+  ONE_ON_ONE
+  GROUP
+  BOTH
+}
+
+enum GuideStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model SessionGuide {
+  id                       String      @id @default(cuid())
+  title                    String
+  purpose                  String      @db.VarChar(1000)
+  suggestedDurationMinutes Int
+  format                   GuideFormat @default(BOTH)
+  category                 String?
+  status                   GuideStatus @default(DRAFT)
+  order                    Int         @default(0)
+  createdByUserId          String?
+  createdBy                User?       @relation("GuideCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  steps  SessionGuideStep[]
+  groups Group[]
+
+  @@map("session_guides")
+}
+
+enum GuideStepKind {
+  AGENDA
+  PROMPT
+  FOLLOWUP
+}
+
+model SessionGuideStep {
+  id      String        @id @default(cuid())
+  guideId String
+  guide   SessionGuide  @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  order   Int
+  title   String
+  prompt  String        @db.VarChar(2000)
+  kind    GuideStepKind @default(AGENDA)
+
+  @@index([guideId, order])
+  @@map("session_guide_steps")
+}
+
+// =============================================================================
+// Community interview experience & question library
+// =============================================================================
+
+enum InterviewStage {
+  RECRUITER_SCREEN
+  TECHNICAL_SCREEN
+  CODING
+  SYSTEM_DESIGN
+  BEHAVIORAL
+  HIRING_MANAGER
+  TAKE_HOME
+  FINAL_ROUND
+  OTHER
+}
+
+enum InterviewFormat {
+  ONLINE
+  ONSITE
+  PAIR_PROGRAMMING
+  WRITTEN_EXERCISE
+  CONVERSATION
+  OTHER
+}
+
+enum InterviewOutcome {
+  OFFER
+  REJECTED
+  NO_RESPONSE
+  WITHDREW
+  IN_PROGRESS
+}
+
+enum ExperienceStatus {
+  DRAFT
+  PENDING_REVIEW
+  NEEDS_CHANGES
+  APPROVED
+  SCHEDULED_FOR_PUBLICATION
+  PUBLISHED
+  REJECTED
+  REMOVED
+  WITHDRAWN_BY_AUTHOR
+}
+
+/// authorId is INTERNAL ONLY: restricted to moderation/reward services. Public
+/// and library DTOs must never select or serialize this field.
+model InterviewExperience {
+  id       String @id @default(cuid())
+  authorId String
+  author   User   @relation("ExperienceAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id])
+  targetRoleId    String?
+  targetRole      TargetRole?    @relation(fields: [targetRoleId], references: [id])
+  seniorityBandId String?
+  seniorityBand   SeniorityBand? @relation(fields: [seniorityBandId], references: [id])
+  regionId        String?
+  region          Region?        @relation(fields: [regionId], references: [id])
+
+  periodYear    Int
+  periodQuarter Int // 1-4, never an exact date
+
+  processDescription String  @db.VarChar(4000)
+  whatIWishIKnew     String? @db.VarChar(2000)
+
+  difficultyRating Int? // 1-5
+  usefulnessRating Int? // 1-5
+  outcome          InterviewOutcome?
+  outcomeVisible   Boolean           @default(false)
+
+  status      ExperienceStatus @default(DRAFT)
+  publishAt   DateTime? // moderation-configured publication delay
+  publishedAt DateTime?
+  version     Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  stages              InterviewExperienceStage[]
+  questions           InterviewQuestion[]
+  topics              InterviewExperienceTopic[]
+  reviews             ContributionReview[]
+  revisionRequests    ContributionRevisionRequest[]
+  attestation         ContributionAttestation?
+  validations         ContributionValidation[]
+  contentReports      ContentReport[]
+  takedownRequests    TakedownRequest[]
+  creditLedgerEntries CreditLedgerEntry[]
+  professionalField   ProfessionalField?            @relation(fields: [professionalFieldId], references: [id])
+  professionalFieldId String?
+
+  @@index([companyId, status])
+  @@index([status, publishAt])
+  @@map("interview_experiences")
+}
+
+model InterviewExperienceStage {
+  id                    String              @id @default(cuid())
+  experienceId          String
+  experience            InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  stage                 InterviewStage
+  format                InterviewFormat
+  approxDurationMinutes Int?
+  order                 Int                 @default(0)
+
+  questions InterviewQuestion[]
+
+  @@index([experienceId, order])
+  @@map("interview_experience_stages")
+}
+
+model InterviewQuestion {
+  id           String                    @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience       @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  stageId      String?
+  stage        InterviewExperienceStage? @relation(fields: [stageId], references: [id])
+  text         String                    @db.VarChar(2000)
+  isFollowUp   Boolean                   @default(false)
+  order        Int                       @default(0)
+  createdAt    DateTime                  @default(now())
+
+  topics InterviewQuestionTopic[]
+
+  @@index([experienceId, order])
+  @@map("interview_questions")
+}
+
+model InterviewExperienceTopic {
+  id           String              @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  tagId        String
+  tag          Tag                 @relation(fields: [tagId], references: [id])
+
+  @@unique([experienceId, tagId])
+  @@map("interview_experience_topics")
+}
+
+model InterviewQuestionTopic {
+  id         String            @id @default(cuid())
+  questionId String
+  question   InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        Tag               @relation(fields: [tagId], references: [id])
+
+  @@unique([questionId, tagId])
+  @@map("interview_question_topics")
+}
+
+enum ModerationActionType {
+  APPROVE
+  REQUEST_CHANGES
+  REJECT
+  REMOVE
+  RESTORE
+}
+
+model ContributionReview {
+  id           String               @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience  @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  moderatorId  String
+  moderator    User                 @relation(fields: [moderatorId], references: [id])
+  action       ModerationActionType
+  notes        String?              @db.VarChar(2000)
+  createdAt    DateTime             @default(now())
+
+  @@index([experienceId])
+  @@map("contribution_reviews")
+}
+
+model ContributionRevisionRequest {
+  id           String              @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  moderatorId  String
+  moderator    User                @relation(fields: [moderatorId], references: [id])
+  message      String              @db.VarChar(2000)
+  createdAt    DateTime            @default(now())
+  resolvedAt   DateTime?
+
+  @@index([experienceId])
+  @@map("contribution_revision_requests")
+}
+
+model ContributionAttestation {
+  id                     String              @id @default(cuid())
+  experienceId           String              @unique
+  experience             InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  userId                 String
+  user                   User                @relation(fields: [userId], references: [id])
+  attestedOwnExperience  Boolean
+  attestedTruthful       Boolean
+  attestedPermitted      Boolean
+  attestedNoConfidential Boolean
+  attestedParaphrased    Boolean
+  createdAt              DateTime            @default(now())
+
+  @@map("contribution_attestations")
+}
+
+enum ValidationType {
+  SIMILAR_QUESTION
+  RESEMBLES_PROCESS
+  OUTDATED
+  DUPLICATE
+  CONFIDENTIAL_CONCERN
+  USEFUL
+}
+
+/// userId is retained for abuse-prevention (rate limiting, self-validation
+/// checks, dedupe) but is never surfaced in any response about this row.
+model ContributionValidation {
+  id           String              @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         ValidationType
+  createdAt    DateTime            @default(now())
+
+  @@unique([experienceId, userId, type])
+  @@map("contribution_validations")
+}
+
+enum ContentReportReason {
+  PERSONAL_DATA
+  CONFIDENTIAL_INFO
+  FABRICATED
+  DUPLICATE
+  OFFENSIVE
+  OTHER
+}
+
+model ContentReport {
+  id           String              @id @default(cuid())
+  experienceId String
+  experience   InterviewExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  reporterId   String
+  reporter     User                @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reason       ContentReportReason
+  description  String?             @db.VarChar(2000)
+  status       ReportStatus        @default(OPEN)
+  createdAt    DateTime            @default(now())
+  resolvedAt   DateTime?
+
+  @@index([experienceId, status])
+  @@map("content_reports")
+}
+
+model ModerationAction {
+  id          String   @id @default(cuid())
+  targetType  String
+  targetId    String
+  moderatorId String
+  moderator   User     @relation(fields: [moderatorId], references: [id])
+  action      String
+  reason      String?  @db.VarChar(2000)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("moderation_actions")
+}
+
+enum TakedownStatus {
+  OPEN
+  IN_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+model TakedownRequest {
+  id               String               @id @default(cuid())
+  experienceId     String?
+  experience       InterviewExperience? @relation(fields: [experienceId], references: [id])
+  companyId        String?
+  company          Company?             @relation(fields: [companyId], references: [id])
+  requesterName    String
+  requesterEmail   String
+  reason           String               @db.VarChar(2000)
+  status           TakedownStatus       @default(OPEN)
+  createdAt        DateTime             @default(now())
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  resolvedBy       User?                @relation(fields: [resolvedByUserId], references: [id])
+  resolutionNote   String?
+
+  @@map("takedown_requests")
+}
+
+// =============================================================================
+// Credits & rewards
+// =============================================================================
+
+enum CreditReason {
+  CONTRIBUTION_APPROVED
+  UNIQUE_QUESTION_BONUS
+  VALIDATION_BONUS
+  CONVERSION
+  REVERSAL
+  ADMIN_ADJUSTMENT
+}
+
+/// Permanent, append-only ledger. Balance = sum(amount) for a user. Never
+/// delete or mutate a row; reversals are new negative entries referencing
+/// the original via idempotencyKey convention "reversal:<original id>".
+model CreditLedgerEntry {
+  id                 String               @id @default(cuid())
+  userId             String
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount             Int // positive = grant, negative = spend/reversal
+  reason             CreditReason
+  sourceExperienceId String?
+  sourceExperience   InterviewExperience? @relation(fields: [sourceExperienceId], references: [id])
+  idempotencyKey     String               @unique
+  createdAt          DateTime             @default(now())
+
+  @@index([userId])
+  @@map("credit_ledger_entries")
+}
+
+model CreditConversion {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditsSpent      Int
+  accessDaysGranted Int
+  createdAt         DateTime @default(now())
+
+  @@map("credit_conversions")
+}
+
+/// Config-driven reward rules (grant amounts, caps, windows). Seeded with the
+/// spec's suggested defaults; edit via admin, never hard-code these numbers
+/// in service code.
+model RewardPolicy {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  valueJson   Json
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("reward_policies")
+}
+
+// =============================================================================
+// Commerce: access passes & payments
+// =============================================================================
+
+model ProductConfiguration {
+  id                 String   @id @default(cuid())
+  key                String   @unique
+  name               String
+  priceCents         Int
+  currency           String   @default("ILS")
+  accessDurationDays Int
+  isActive           Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+
+  payments     Payment[]
+  accessPasses AccessPass[]
+
+  @@map("product_configurations")
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+model Payment {
+  id              String               @id @default(cuid())
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productConfigId String
+  productConfig   ProductConfiguration @relation(fields: [productConfigId], references: [id])
+  provider        String               @default("fake")
+  providerRef     String?
+  amountCents     Int
+  currency        String               @default("ILS")
+  status          PaymentStatus        @default(CREATED)
+  idempotencyKey  String               @unique
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  accessPass AccessPass?
+
+  @@index([userId])
+  @@map("payments")
+}
+
+enum AccessPassStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum ActivationEventType {
+  FIRST_MUTUAL_CONNECTION
+  FIRST_GROUP_JOIN
+  MANUAL
+}
+
+model AccessPass {
+  id                   String                @id @default(cuid())
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentId            String?               @unique
+  payment              Payment?              @relation(fields: [paymentId], references: [id])
+  productConfigId      String?
+  productConfig        ProductConfiguration? @relation(fields: [productConfigId], references: [id])
+  status               AccessPassStatus      @default(PENDING_ACTIVATION)
+  activationEventType  ActivationEventType?
+  activatedAt          DateTime?
+  expiresAt            DateTime?
+  durationDays         Int
+  bonusDaysFromCredits Int                   @default(0)
+  isReplacement        Boolean               @default(false)
+  version              Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  events AccessPassEvent[]
+
+  @@index([userId, status])
+  @@map("access_passes")
+}
+
+enum AccessPassEventType {
+  CREATED
+  ACTIVATED
+  EXTENDED
+  EXPIRED
+  CANCELLED
+  REPLACEMENT_GRANTED
+}
+
+model AccessPassEvent {
+  id           String              @id @default(cuid())
+  accessPassId String
+  accessPass   AccessPass          @relation(fields: [accessPassId], references: [id], onDelete: Cascade)
+  type         AccessPassEventType
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+
+  @@index([accessPassId])
+  @@map("access_pass_events")
+}
+
+// =============================================================================
+// Notifications (supporting entity for expiry reminders etc., not a social feed)
+// =============================================================================
+
+model NotificationLog {
+  id      String   @id @default(cuid())
+  userId  String
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type    String
+  channel String   @default("EMAIL")
+  payload Json?
+  sentAt  DateTime @default(now())
+
+  @@index([userId, type])
+  @@map("notification_logs")
+}
