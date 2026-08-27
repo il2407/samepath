@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-ink: #17201e;
+  --color-muted: #65706d;
+  --color-paper: #f6f8f5;
+  --color-white: #ffffff;
+  --color-primary: #0f695a;
+  --color-primary-dark: #0b5045;
+  --color-mint: #e5f4ef;
+  --color-lime: #cdea8a;
+  --color-warm-surface: #f2eee6;
+  --color-border: #dfe6e2;
+
+  --font-body: var(--font-rubik), "Segoe UI", Tahoma, sans-serif;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ink: var(--color-ink);
+  --color-muted: var(--color-muted);
+  --color-paper: var(--color-paper);
+  --color-white: var(--color-white);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-mint: var(--color-mint);
+  --color-lime: var(--color-lime);
+  --color-warm-surface: var(--color-warm-surface);
+  --color-border: var(--color-border);
+  --font-sans: var(--font-body);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+/* Visible, high-contrast focus ring for keyboard users (WCAG). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
