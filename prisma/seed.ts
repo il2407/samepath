@@ -5,6 +5,7 @@ import { seedReferenceData } from "./seed/reference-data";
 import { seedCompanies } from "./seed/companies";
 import { seedConfig } from "./seed/config";
 import { seedUsers } from "./seed/users";
+import { seedGuides } from "./seed/guides";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -21,6 +22,9 @@ async function main() {
 
   console.log("Seeding fictional users and groups...");
   await seedUsers(prisma);
+
+  console.log("Seeding optional session guides...");
+  await seedGuides(prisma);
 
   console.log("Done.");
 }
