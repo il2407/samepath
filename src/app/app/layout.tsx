@@ -27,6 +27,12 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
               <Link href="/app/guides" className="hover:text-ink">
                 מדריכים
               </Link>
+              <Link href="/app/interviews" className="hover:text-ink">
+                ספריית ראיונות
+              </Link>
+              <Link href="/app/credits" className="hover:text-ink">
+                קרדיטים
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
