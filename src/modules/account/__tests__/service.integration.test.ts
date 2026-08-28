@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
 import { createTestUser } from "@/shared/test/fixtures";
 import { prisma } from "@/shared/db";
+import { getStorage } from "@/shared/storage";
 import { deleteAccount, exportAccountData } from "@/modules/account/service";
 
 beforeEach(async () => {
@@ -71,5 +72,28 @@ describe("deleteAccount", () => {
 
     const stillPublished = await prisma.interviewExperience.findUniqueOrThrow({ where: { id: experience.id } });
     expect(stillPublished.status).toBe("PUBLISHED");
+  });
+
+  it("deletes the underlying resume file from storage, not just the DB status", async () => {
+    const user = await createTestUser();
+    const storage = getStorage();
+    const storageKey = `resumes/${user.user.id}/account-deletion-test.pdf`;
+    await storage.put(storageKey, Buffer.from("fake resume bytes"));
+    await prisma.resumeUpload.create({
+      data: {
+        userId: user.user.id,
+        storageKey,
+        originalFilename: "resume.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 18,
+        status: "READY",
+      },
+    });
+
+    await deleteAccount(user.user.id);
+
+    const upload = await prisma.resumeUpload.findFirstOrThrow({ where: { userId: user.user.id } });
+    expect(upload.status).toBe("DELETED");
+    await expect(storage.get(storageKey)).rejects.toThrow();
   });
 });

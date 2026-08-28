@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/shared/db";
+import { getStorage } from "@/shared/storage";
 
 export async function exportAccountData(userId: string) {
   const [user, profile, payments, accessPasses, contributions, creditLedger, connections, blockedCompanies, blockedUsers] =
@@ -56,6 +57,23 @@ export async function exportAccountData(userId: string) {
  */
 export async function deleteAccount(userId: string): Promise<void> {
   const profile = await prisma.professionalProfile.findUnique({ where: { userId } });
+
+  // Delete the underlying files before the DB transaction: marking a
+  // ResumeUpload DELETED without also removing its bytes from storage would
+  // leave the actual resume sitting on disk, silently undermining the same
+  // "deleted means deleted" guarantee the resume-confirmation flow makes.
+  const resumeUploads = await prisma.resumeUpload.findMany({
+    where: { userId, status: { not: "DELETED" } },
+    select: { storageKey: true },
+  });
+  const storage = getStorage();
+  for (const upload of resumeUploads) {
+    try {
+      await storage.delete(upload.storageKey);
+    } catch (error) {
+      console.error("failed to delete resume file during account deletion", { userId, error });
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.session.updateMany({ where: { userId }, data: { revokedAt: new Date() } });
