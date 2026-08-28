@@ -97,7 +97,7 @@ privacy/score internals are restricted tables, money-as-cents) is in
 | `companies` | Canonical companies, aliases, corporate groups, fuzzy search |
 | `privacy` | The hard-filter engine (`engine.ts`, pure) + DB-backed eligibility loading and audit logging |
 | `matching` | Scoring (pure) + suggestion generation, mutual opt-in state machine |
-| `connections` | Post-match messaging, meeting confirmation, blocking, reporting |
+| `connections` | Post-match messaging, meeting confirmation, blocking, reporting, suggested session structure |
 | `groups` | Small private groups with the same privacy guarantees |
 | `guides` | Optional, never-mandatory session guides (read path; authoring lives in `admin`) |
 | `interviews` | Community-contributed interview-experience library: drafting, moderation queue, publication |
@@ -295,6 +295,31 @@ Mutual opt-in is a real state machine (`MatchStatus`): `PROPOSED ->
 INTERESTED_BY_A/B -> MUTUALLY_ACCEPTED -> ACCESS_CHECK -> ACTIVE`, with
 `DECLINED`/`EXPIRED` off-ramps. `ACCESS_CHECK` is where the access-pass
 gate lives — see below.
+
+### Suggested session structure
+
+A real product gap surfaced during this build: matching two people is not
+the same as making sure the *session* itself is worth either person's
+time — without any structure, it's easy for one side's agenda to
+dominate while the other leaves without what they came for. Once a
+connection is active, its room offers a suggested, timed structure
+(`SessionGuideStep.role`: `PRESENTER`/`LISTENER`/`BOTH`, plus
+`durationMinutes`) picked from one of three categories: project/
+architecture presentation, coding, and system design. Picking one is a
+single click — a random published guide from that category is attached
+to the `Connection` (`selectedGuideId`) so **both** participants see the
+identical structure, not two different random picks; it can be re-rolled
+or cleared any time. Coding guides are collaborative (`BOTH` throughout,
+matching "work on a problem together"); the other two use a presenter/
+listener/reflect/swap structure. Still fully optional — same as every
+other guide, nothing here is tracked for completion or required.
+
+Seed content (`prisma/seed/guides.ts`) uses genuinely common, publicly-
+known interview questions (Two Sum, LRU Cache, a URL shortener, a rate
+limiter, etc.) as a starter pool, not attributed to any real company's
+actual question bank and not meant to be the final set — extend it via
+the existing `/admin/guides` UI (category `coding` / `system-design` /
+`project-presentation`).
 
 ## Resume upload & extraction
 
