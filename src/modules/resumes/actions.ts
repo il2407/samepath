@@ -6,11 +6,18 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
 import { saveProfileStepOne, type ProfileStepOneInput } from "@/modules/profiles/service";
 import { uploadResume, confirmResumeDraft, discardResumeUpload } from "@/modules/resumes/service";
+import { rateLimit } from "@/shared/rate-limit";
 
 export type ActionState = { ok: boolean; error?: string };
 
 export async function uploadResumeAction(formData: FormData): Promise<ActionState> {
   const user = await requireUser();
+
+  // Each upload runs real PDF/DOCX parsing and can create new company rows
+  // — cheap enough per call to be a real spam/cost vector without a cap.
+  const limited = rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
+  if (!limited.allowed) return { ok: false, error: "יותר מדי העלאות. נסו שוב בעוד כשעה" };
+
   const file = formData.get("file");
   if (!(file instanceof File)) return { ok: false, error: "לא נבחר קובץ" };
 
