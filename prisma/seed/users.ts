@@ -269,5 +269,19 @@ export async function seedUsers(prisma: PrismaClient) {
     });
   }
 
+  // Admin/moderator account for the internal admin area — no professional
+  // profile, since admins access /admin rather than the member-facing /app.
+  await prisma.user.upsert({
+    where: { id: "seed-user-admin" },
+    update: {},
+    create: {
+      id: "seed-user-admin",
+      email: "admin@example.com",
+      emailVerifiedAt: new Date(),
+      status: "ACTIVE",
+      role: "ADMIN",
+    },
+  });
+
   return { dana, yossi, noa, avi, maya, ronit, eitan, tal, shira, eligibleGroup, conflictedGroup };
 }
