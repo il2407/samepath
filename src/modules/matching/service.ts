@@ -12,6 +12,7 @@ import {
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
 import { toPreMatchDTO, type PreMatchCandidateDTO } from "@/modules/profiles/dto";
 import { createConnectionFromMatch } from "@/modules/connections/service";
+import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
 import type { MatchDecisionType, MatchStatus } from "@/generated/prisma/client";
 
 const SUGGESTION_EXPIRY_DAYS = 14;
@@ -31,13 +32,17 @@ const VISIBLE_STATUSES: MatchStatus[] = ["PROPOSED", "INTERESTED_BY_A", "INTERES
 
 /**
  * Whether both sides of a mutual match have the access needed to open a
- * connection. Until the access-passes module exists, everyone passes so
- * mutual matches always reach ACTIVE — swap this implementation (it will
- * need the two user ids) when that module lands; nothing else in the state
- * machine needs to change.
+ * connection. Checked (and, where a paid-but-unstarted pass exists,
+ * activated) independently per user: whichever side already had an active
+ * or pending pass gets it started by this event; a side with no pass at
+ * all still needs to purchase before the connection can open.
  */
-async function checkAccessGate(): Promise<boolean> {
-  return true;
+async function checkAccessGate(userAId: string, userBId: string): Promise<boolean> {
+  const [aOk, bOk] = await Promise.all([
+    checkAndActivateAccessGate(userAId, "FIRST_MUTUAL_CONNECTION"),
+    checkAndActivateAccessGate(userBId, "FIRST_MUTUAL_CONNECTION"),
+  ]);
+  return aOk && bOk;
 }
 
 export async function generateSuggestionsForUser(userId: string): Promise<number> {
@@ -263,8 +268,15 @@ async function activateMutualMatch(matchSuggestionId: string, userAId: string, u
     where: { id: matchSuggestionId },
     data: { status: "MUTUALLY_ACCEPTED", decidedAt: new Date() },
   });
+  return resolveAccessGateAndActivate(matchSuggestionId, userAId, userBId);
+}
 
-  const bothHaveAccess = await checkAccessGate();
+async function resolveAccessGateAndActivate(
+  matchSuggestionId: string,
+  userAId: string,
+  userBId: string,
+): Promise<MatchStatus> {
+  const bothHaveAccess = await checkAccessGate(userAId, userBId);
   const finalStatus: MatchStatus = bothHaveAccess ? "ACTIVE" : "ACCESS_CHECK";
 
   await prisma.matchSuggestion.update({ where: { id: matchSuggestionId }, data: { status: finalStatus } });
@@ -273,4 +285,19 @@ async function activateMutualMatch(matchSuggestionId: string, userAId: string, u
   }
 
   return finalStatus;
+}
+
+/**
+ * Re-attempts activation for every suggestion of this user's stuck in
+ * ACCESS_CHECK — call right after a purchase completes, since that's
+ * exactly the moment the missing side of a pending mutual match might now
+ * clear the gate.
+ */
+export async function retryAccessCheckSuggestionsForUser(userId: string): Promise<void> {
+  const stuck = await prisma.matchSuggestion.findMany({
+    where: { status: "ACCESS_CHECK", OR: [{ userAId: userId }, { userBId: userId }] },
+  });
+  for (const suggestion of stuck) {
+    await resolveAccessGateAndActivate(suggestion.id, suggestion.userAId, suggestion.userBId);
+  }
 }

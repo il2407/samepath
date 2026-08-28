@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
-import { createTestCompany, createTestUser } from "@/shared/test/fixtures";
+import { createTestCompany, createTestUser, grantActiveAccessPass } from "@/shared/test/fixtures";
 import { prisma } from "@/shared/db";
 import {
   checkGroupEligibility,
@@ -89,6 +89,7 @@ describe("checkGroupEligibility / listEligibleGroups", () => {
 describe("requestToJoinGroup", () => {
   it("joins directly when there's room and the candidate is eligible", async () => {
     const user = await createTestUser();
+    await grantActiveAccessPass(user.user.id);
     const group = await createGroup(4);
     const result = await requestToJoinGroup(user.user.id, group.id);
     expect(result).toBe("JOINED");
@@ -103,6 +104,8 @@ describe("requestToJoinGroup", () => {
     const group = await createGroup(1);
     const first = await createTestUser();
     const second = await createTestUser();
+    await grantActiveAccessPass(first.user.id);
+    await grantActiveAccessPass(second.user.id);
 
     expect(await requestToJoinGroup(first.user.id, group.id)).toBe("JOINED");
     expect(await requestToJoinGroup(second.user.id, group.id)).toBe("WAITLISTED");
@@ -137,9 +140,26 @@ describe("requestToJoinGroup", () => {
 
   it("is idempotent for an already-active member", async () => {
     const user = await createTestUser();
+    await grantActiveAccessPass(user.user.id);
     const group = await createGroup(4);
     await requestToJoinGroup(user.user.id, group.id);
     expect(await requestToJoinGroup(user.user.id, group.id)).toBe("ALREADY_MEMBER");
+  });
+
+  it("requires active access before joining, activating a pending pass on success", async () => {
+    const user = await createTestUser();
+    const group = await createGroup(4);
+    expect(await requestToJoinGroup(user.user.id, group.id)).toBe("ACCESS_REQUIRED");
+    expect(await prisma.groupMembership.count({ where: { groupId: group.id } })).toBe(0);
+
+    await prisma.accessPass.create({
+      data: { userId: user.user.id, status: "PENDING_ACTIVATION", durationDays: 45 },
+    });
+    expect(await requestToJoinGroup(user.user.id, group.id)).toBe("JOINED");
+
+    const pass = await prisma.accessPass.findFirstOrThrow({ where: { userId: user.user.id } });
+    expect(pass.status).toBe("ACTIVE");
+    expect(pass.activationEventType).toBe("FIRST_GROUP_JOIN");
   });
 });
 
@@ -147,6 +167,7 @@ describe("leaveGroup", () => {
   it("marks the membership LEFT and reopens a FULL group", async () => {
     const group = await createGroup(1);
     const user = await createTestUser();
+    await grantActiveAccessPass(user.user.id);
     await requestToJoinGroup(user.user.id, group.id);
     expect((await prisma.group.findUniqueOrThrow({ where: { id: group.id } })).status).toBe("FULL");
 

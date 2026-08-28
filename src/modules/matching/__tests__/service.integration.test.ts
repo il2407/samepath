@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
-import { createTestCompany, createTestUser } from "@/shared/test/fixtures";
+import { createTestCompany, createTestUser, grantActiveAccessPass } from "@/shared/test/fixtures";
 import { prisma } from "@/shared/db";
 import {
   generateSuggestionsForUser,
   getActiveSuggestionsForUser,
   recordMatchDecision,
+  retryAccessCheckSuggestionsForUser,
 } from "@/modules/matching/service";
 
 beforeEach(async () => {
@@ -118,10 +119,12 @@ describe("recordMatchDecision — the full state machine", () => {
     expect(result).toEqual({ status: "INTERESTED_BY_A", mutuallyAccepted: false });
   });
 
-  it("reaches ACTIVE and creates a Connection when both sides say INTERESTED", async () => {
+  it("reaches ACTIVE and creates a Connection when both sides say INTERESTED and both have access", async () => {
     const { field, role } = await seedRole();
     const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
     const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await grantActiveAccessPass(a.user.id);
+    await grantActiveAccessPass(b.user.id);
     await generateSuggestionsForUser(a.user.id);
     const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
 
@@ -133,6 +136,35 @@ describe("recordMatchDecision — the full state machine", () => {
     const connection = await prisma.connection.findUnique({ where: { matchSuggestionId: suggestion.id } });
     expect(connection).not.toBeNull();
     expect([connection?.userAId, connection?.userBId].sort()).toEqual([a.user.id, b.user.id].sort());
+  });
+
+  it("moves to ACCESS_CHECK instead of ACTIVE when neither side has purchased access, and creates no Connection", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    const result = await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+
+    expect(result).toEqual({ status: "ACCESS_CHECK", mutuallyAccepted: true });
+    expect(await prisma.connection.count()).toBe(0);
+  });
+
+  it("still requires access from BOTH sides — one purchased pass alone is not enough", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await grantActiveAccessPass(a.user.id);
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    const result = await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+
+    expect(result.status).toBe("ACCESS_CHECK");
+    expect(await prisma.connection.count()).toBe(0);
   });
 
   it("declines on NOT_NOW without notifying or informing the other party of the reason", async () => {
@@ -226,5 +258,29 @@ describe("recordMatchDecision — the full state machine", () => {
       },
     });
     expect(suggestionsWithB).toHaveLength(0);
+  });
+});
+
+describe("retryAccessCheckSuggestionsForUser", () => {
+  it("promotes an ACCESS_CHECK suggestion to ACTIVE once the missing side gets a pass, and creates the Connection", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await grantActiveAccessPass(a.user.id);
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+    expect((await prisma.matchSuggestion.findUniqueOrThrow({ where: { id: suggestion.id } })).status).toBe(
+      "ACCESS_CHECK",
+    );
+
+    await grantActiveAccessPass(b.user.id);
+    await retryAccessCheckSuggestionsForUser(b.user.id);
+
+    const resolved = await prisma.matchSuggestion.findUniqueOrThrow({ where: { id: suggestion.id } });
+    expect(resolved.status).toBe("ACTIVE");
+    expect(await prisma.connection.count()).toBe(1);
   });
 });

@@ -97,3 +97,17 @@ export async function createTestUser(options: TestUserOptions = {}) {
 export async function createTestCompany(canonicalName: string, corporateGroupId?: string) {
   return prisma.company.create({ data: { canonicalName, corporateGroupId } });
 }
+
+/** Grants a test user an already-active access pass, bypassing the purchase flow. */
+export async function grantActiveAccessPass(userId: string, durationDays = 45) {
+  return prisma.accessPass.create({
+    data: {
+      userId,
+      status: "ACTIVE",
+      durationDays,
+      activatedAt: new Date(),
+      expiresAt: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000),
+      activationEventType: "MANUAL",
+    },
+  });
+}

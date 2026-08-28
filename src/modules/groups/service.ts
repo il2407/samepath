@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/shared/db";
 import { checkPrivacy } from "@/modules/privacy/context";
+import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
 import type { GroupStatus, ReportCategory } from "@/generated/prisma/client";
 
 const VISIBLE_STATUSES: GroupStatus[] = ["OPEN", "FULL"];
@@ -111,7 +112,7 @@ export async function listEligibleGroups(userId: string): Promise<GroupSummary[]
   return result;
 }
 
-export type JoinGroupResult = "JOINED" | "WAITLISTED" | "INELIGIBLE" | "ALREADY_MEMBER";
+export type JoinGroupResult = "JOINED" | "WAITLISTED" | "INELIGIBLE" | "ALREADY_MEMBER" | "ACCESS_REQUIRED";
 
 export async function requestToJoinGroup(userId: string, groupId: string): Promise<JoinGroupResult> {
   const existingBeforeCheck = await prisma.groupMembership.findUnique({
@@ -129,6 +130,12 @@ export async function requestToJoinGroup(userId: string, groupId: string): Promi
   // transaction's own held connection.
   const eligible = await checkGroupEligibility(userId, groupId);
   if (!eligible) return "INELIGIBLE";
+
+  // Same reasoning as above: run outside the transaction. Joining a group
+  // (including the waitlist) is a "join a new group" action the spec gates
+  // on active access, same as accepting a new match.
+  const hasAccess = await checkAndActivateAccessGate(userId, "FIRST_GROUP_JOIN");
+  if (!hasAccess) return "ACCESS_REQUIRED";
 
   return prisma.$transaction(async (tx) => {
     const group = await tx.group.findUniqueOrThrow({ where: { id: groupId } });

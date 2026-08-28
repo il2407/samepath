@@ -4,6 +4,7 @@ import { requireUser } from "@/modules/auth/session";
 import { getOnboardingStep } from "@/modules/profiles/service";
 import { getActiveSuggestionsForUser } from "@/modules/matching/service";
 import { listConnectionsForUser } from "@/modules/connections/service";
+import { getAccessStatus, sendExpiryRemindersDue } from "@/modules/access-passes/service";
 import { Container } from "@/shared/ui/Container";
 
 const stepPaths = {
@@ -17,9 +18,14 @@ export default async function AppHomePage() {
   const step = await getOnboardingStep(user.id);
   if (step !== "done") redirect(stepPaths[step]);
 
-  const [suggestions, connections] = await Promise.all([
+  // Lazy, idempotent (no cron in the MVP) — cheap enough at this user scale;
+  // a real deployment should move this to a scheduled job instead.
+  await sendExpiryRemindersDue();
+
+  const [suggestions, connections, access] = await Promise.all([
     getActiveSuggestionsForUser(user.id),
     listConnectionsForUser(user.id),
+    getAccessStatus(user.id),
   ]);
   const activeConnections = connections.filter((c) => c.status === "ACTIVE");
 
@@ -28,7 +34,7 @@ export default async function AppHomePage() {
       <h1 className="text-2xl font-bold text-ink">ברוכים הבאים ל-SamePath</h1>
       <p className="mt-2 text-muted">הפרופיל שלכם ({user.email}) פעיל.</p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <Link href="/app/matches" className="rounded-2xl border border-border bg-white p-6 hover:border-primary">
           <p className="text-3xl font-bold text-ink">{suggestions.length}</p>
           <p className="mt-1 text-sm text-muted">הצעות התאמה ממתינות</p>
@@ -36,6 +42,27 @@ export default async function AppHomePage() {
         <Link href="/app/connections" className="rounded-2xl border border-border bg-white p-6 hover:border-primary">
           <p className="text-3xl font-bold text-ink">{activeConnections.length}</p>
           <p className="mt-1 text-sm text-muted">חיבורים פעילים</p>
+        </Link>
+        <Link href="/app/access" className="rounded-2xl border border-border bg-white p-6 hover:border-primary">
+          <p className="text-3xl font-bold text-ink">
+            {access.hasActivePass && access.daysRemaining !== null ? access.daysRemaining : "—"}
+          </p>
+          <p className="mt-1 text-sm text-muted">ימי גישה נותרו</p>
+        </Link>
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-3 text-sm">
+        <Link href="/app/groups" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
+          קבוצות זמינות
+        </Link>
+        <Link href="/app/guides" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
+          מדריכים אופציונליים
+        </Link>
+        <Link href="/app/settings/privacy" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
+          הגדרות פרטיות
+        </Link>
+        <Link href="/app/settings/account" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
+          ניהול חשבון
         </Link>
       </div>
     </Container>
