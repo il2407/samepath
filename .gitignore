@@ -40,5 +40,10 @@ pnpm-debug.log*
 # local storage / uploads (dev fake storage adapter)
 .local-storage/
 
+# playwright e2e output
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
 # prisma local dev database state
 .prisma-dev/

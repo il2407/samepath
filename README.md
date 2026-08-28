@@ -212,6 +212,44 @@ has plain unit tests with no DB. `src/shared/test/fixtures.ts` has
 reusable fixtures (`createTestUser`, `createTestCompany`,
 `grantActiveAccessPass`) for the integration suite.
 
+### End-to-end tests
+
+```bash
+pnpm dev            # in one terminal, or let Playwright launch it (below)
+pnpm e2e             # playwright test
+pnpm e2e:ui          # interactive UI mode
+```
+
+`e2e/` (Playwright, `playwright.config.ts`) drives a real browser against
+the app running on the **local dev database** (`.env`, already seeded —
+see "Local development setup"), not the vitest suite's throwaway
+`.env.test` database: these specs need the seeded reference data (fields,
+roles, tags, languages, the `admin@example.com` account) to exercise real
+forms, and vitest's per-test `TRUNCATE` reset would pull that data out
+from under a running browser session. Each spec registers its own
+throwaway user with a timestamped email, so runs don't collide with each
+other or the seeded fictional accounts — this does mean repeated `pnpm
+e2e` runs accumulate harmless extra users in the dev database over time.
+
+Three specs cover the highest-value real-browser paths: the full manual
+onboarding golden path (register -> profile -> privacy -> preferences ->
+the authenticated app shell), the resume-upload alternative (upload a
+real generated PDF, confirm the extraction pre-filled the form correctly,
+submit), and the admin area (log in as the seeded admin, see real
+dashboard metrics, create a guide end to end). The mutual-match/connection
+flow is **not** covered at the e2e level — it needs two coordinated
+sessions with deliberately compatible profiles, which is exercised
+thoroughly at the integration-test level instead
+(`matching/__tests__/service.integration.test.ts`); adding a true
+two-browser e2e version is a reasonable next investment, not something
+this pass got to.
+
+Verification codes are never stored in plaintext anywhere (only a hash —
+`EmailVerification.codeHash`), so there's no DB shortcut for reading one
+in a test: `e2e/helpers/mail.ts` reads it back out of the dev server's
+own console output, exactly like a human running `pnpm dev` would read it
+off their terminal (the default `MAIL_ADAPTER=console`).
+
 ## Privacy model
 
 The non-negotiable rules (enforced in `src/modules/privacy/engine.ts`, a
