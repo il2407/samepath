@@ -50,6 +50,12 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
   );
   const seniorityBandId = bandCode ? (bands.find((b) => b.code === bandCode)?.id ?? null) : null;
 
+  const existing = await prisma.professionalProfile.findUnique({ where: { userId } });
+  // Only re-confirmation-gate when the employer actually changed. Editing a
+  // bio or a skill list later (e.g. from the settings page) must not
+  // silently knock an ACTIVE profile back into onboarding.
+  const employerChanged = !existing || existing.currentCompanyId !== currentCompanyId;
+
   await prisma.$transaction(async (tx) => {
     const profile = await tx.professionalProfile.upsert({
       where: { userId },
@@ -61,9 +67,9 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
         experienceMonths,
         seniorityBandId,
         currentCompanyId,
-        // Changing employer must be re-confirmed — never carry a stale confirmation forward.
-        currentCompanyConfirmedAt: null,
-        status: "PENDING_PRIVACY",
+        ...(employerChanged
+          ? { currentCompanyConfirmedAt: null, status: "PENDING_PRIVACY" as const }
+          : {}),
       },
       create: {
         userId,
@@ -113,6 +119,22 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
       });
     }
   });
+}
+
+export async function getProfileEditData(userId: string) {
+  const profile = await prisma.professionalProfile.findUnique({
+    where: { userId },
+    include: {
+      targetRoles: { select: { targetRoleId: true } },
+      tags: { select: { tagId: true } },
+      languages: { select: { languageId: true } },
+      employmentPositions: {
+        include: { company: { select: { id: true, canonicalName: true } } },
+        orderBy: { startDate: "desc" },
+      },
+    },
+  });
+  return profile;
 }
 
 // --- Step 2: privacy onboarding ---------------------------------------------------
@@ -223,6 +245,93 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
     });
     await tx.userConfirmation.create({ data: { userId, type: "PRIVACY_ONBOARDING_CONFIRMED" } });
   });
+}
+
+// --- Post-onboarding settings edits ---------------------------------------------------
+// Same underlying data as the onboarding steps above, but deliberately
+// without their onboarding-specific side effects (resetting profile status,
+// writing UserConfirmation rows) — these are for the settings pages, not
+// first-time setup.
+
+export type PrivacySettingsInput = Omit<PrivacyStepInput, "employerConfirmed">;
+
+export async function updatePrivacySettings(userId: string, input: PrivacySettingsInput): Promise<void> {
+  const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.professionalProfile.update({
+      where: { id: profile.id },
+      data: { resumeRetentionPreference: input.resumeRetentionPreference },
+    });
+
+    await tx.privacyPreference.upsert({
+      where: { profileId: profile.id },
+      update: { blockEntireCorporateGroup: input.blockEntireCorporateGroup },
+      create: { profileId: profile.id, blockEntireCorporateGroup: input.blockEntireCorporateGroup },
+    });
+
+    await tx.blockedCompany.deleteMany({ where: { userId } });
+    if (input.additionalBlockedCompanies.length > 0) {
+      await tx.blockedCompany.createMany({
+        data: input.additionalBlockedCompanies.map((b) => ({
+          userId,
+          companyId: b.companyId,
+          reason: b.reason,
+          note: b.note,
+        })),
+      });
+    }
+
+    await tx.identityDisclosurePreference.upsert({
+      where: { profileId: profile.id },
+      update: {
+        preMatchDisplayMode: input.preMatchDisplayMode,
+        aliasText: input.aliasText,
+        firstName: input.firstName,
+        fullName: input.fullName,
+        shareFullNamePostMatch: input.shareFullNamePostMatch,
+        sharePhotoPostMatch: input.sharePhotoPostMatch,
+        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
+        linkedInUrl: input.linkedInUrl,
+        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
+        phoneNumber: input.phoneNumber,
+      },
+      create: {
+        profileId: profile.id,
+        preMatchDisplayMode: input.preMatchDisplayMode,
+        aliasText: input.aliasText,
+        firstName: input.firstName,
+        fullName: input.fullName,
+        shareFullNamePostMatch: input.shareFullNamePostMatch,
+        sharePhotoPostMatch: input.sharePhotoPostMatch,
+        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
+        linkedInUrl: input.linkedInUrl,
+        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
+        phoneNumber: input.phoneNumber,
+      },
+    });
+  });
+}
+
+export async function getPrivacySettings(userId: string) {
+  const profile = await prisma.professionalProfile.findUnique({
+    where: { userId },
+    include: {
+      privacyPreference: true,
+      disclosurePreference: true,
+      currentCompany: { select: { canonicalName: true } },
+    },
+  });
+  if (!profile) return null;
+  const blockedCompanies = await prisma.blockedCompany.findMany({
+    where: { userId },
+    include: { company: { select: { id: true, canonicalName: true } } },
+  });
+  return { profile, blockedCompanies };
 }
 
 // --- Step 3: connection preferences -------------------------------------------------

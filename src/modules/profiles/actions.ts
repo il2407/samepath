@@ -8,6 +8,7 @@ import {
   completeConnectionPreferences,
   completePrivacyOnboarding,
   saveProfileStepOne,
+  updatePrivacySettings,
 } from "@/modules/profiles/service";
 
 export type ActionState = { ok: boolean; error?: string };
@@ -40,6 +41,17 @@ export async function saveProfileStepOneAction(input: unknown): Promise<ActionSt
   await saveProfileStepOne(user.id, parsed.data);
   revalidatePath("/app", "layout");
   redirect("/app/onboarding/privacy");
+}
+
+/** Same underlying update as onboarding step 1, but for the settings page — stays put instead of continuing the onboarding wizard. */
+export async function updateProfileSettingsAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = stepOneSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
+
+  await saveProfileStepOne(user.id, parsed.data);
+  revalidatePath("/app/settings/profile");
+  return { ok: true };
 }
 
 const blockedCompanySchema = z.object({
@@ -92,6 +104,47 @@ export async function completePrivacyOnboardingAction(input: unknown): Promise<A
   await completePrivacyOnboarding(user.id, parsed.data);
   revalidatePath("/app", "layout");
   redirect("/app/onboarding/preferences");
+}
+
+const privacySettingsSchema = z
+  .object({
+    blockEntireCorporateGroup: z.boolean(),
+    additionalBlockedCompanies: z.array(blockedCompanySchema),
+    preMatchDisplayMode: z.enum(["ALIAS", "FIRST_NAME"]),
+    aliasText: z.string().optional(),
+    firstName: z.string().optional(),
+    fullName: z.string().optional(),
+    shareFullNamePostMatch: z.boolean(),
+    sharePhotoPostMatch: z.boolean(),
+    shareLinkedInPostMatch: z.boolean(),
+    linkedInUrl: z.string().optional(),
+    sharePreciseLocationPostMatch: z.boolean(),
+    shareEmailPostMatch: z.boolean(),
+    sharePhonePostMatch: z.boolean(),
+    phoneNumber: z.string().optional(),
+    resumeRetentionPreference: z.enum(["DELETE_AFTER_CONFIRMATION", "KEEP"]),
+  })
+  .refine((data) => data.preMatchDisplayMode !== "ALIAS" || !!data.aliasText?.trim(), {
+    message: "יש להזין כינוי להצגה",
+    path: ["aliasText"],
+  })
+  .refine((data) => data.preMatchDisplayMode !== "FIRST_NAME" || !!data.firstName?.trim(), {
+    message: "יש להזין שם פרטי",
+    path: ["firstName"],
+  })
+  .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
+    message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
+    path: ["fullName"],
+  });
+
+export async function updatePrivacySettingsAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = privacySettingsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
+
+  await updatePrivacySettings(user.id, parsed.data);
+  revalidatePath("/app/settings/privacy");
+  return { ok: true };
 }
 
 const availabilitySlotSchema = z.object({

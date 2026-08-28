@@ -6,6 +6,7 @@ import {
   completePrivacyOnboarding,
   getOnboardingStep,
   saveProfileStepOne,
+  updatePrivacySettings,
 } from "@/modules/profiles/service";
 
 beforeEach(async () => {
@@ -107,6 +108,39 @@ describe("saveProfileStepOne", () => {
     const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
     expect(profile.currentCompanyId).toBe(companyB.id);
     expect(profile.currentCompanyConfirmedAt).toBeNull();
+  });
+
+  it("does NOT reset employer confirmation or knock an ACTIVE profile back into onboarding when the employer is unchanged", async () => {
+    const { field, role, region } = await seedRefs();
+    const company = await prisma.company.create({ data: { canonicalName: "Acme" } });
+    const user = await prisma.user.create({ data: { email: "unchanged-employer@example.com" } });
+
+    const base = {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      languageIds: [],
+      positions: [
+        { companyId: company.id, companyRaw: "Acme", title: "Engineer", startDate: new Date("2021-01-01"), endDate: null, isCurrent: true },
+      ],
+    };
+
+    await saveProfileStepOne(user.id, base);
+    await prisma.professionalProfile.update({
+      where: { userId: user.id },
+      data: { currentCompanyConfirmedAt: new Date(), status: "ACTIVE" },
+    });
+
+    // a settings-page edit of, say, the short intro — same employer
+    await saveProfileStepOne(user.id, { ...base, shortIntro: "מפתח/ת עם דגש על מערכות בזמן אמת." });
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(profile.currentCompanyConfirmedAt).not.toBeNull();
+    expect(profile.status).toBe("ACTIVE");
+    expect(profile.shortIntro).toBe("מפתח/ת עם דגש על מערכות בזמן אמת.");
   });
 
   it("replaces target roles/tags/languages/positions on re-save rather than accumulating duplicates", async () => {
@@ -218,6 +252,68 @@ describe("completePrivacyOnboarding", () => {
 
     const confirmations = await prisma.userConfirmation.findMany({ where: { userId: user.id } });
     expect(confirmations.map((c) => c.type).sort()).toEqual(["EMPLOYER_CONFIRMED", "PRIVACY_ONBOARDING_CONFIRMED"]);
+  });
+});
+
+describe("updatePrivacySettings", () => {
+  it("updates blocks and disclosure preferences without touching profile status or writing onboarding confirmations", async () => {
+    const { field, role, region } = await seedRefs();
+    const formerCo = await prisma.company.create({ data: { canonicalName: "OldCo" } });
+    const user = await prisma.user.create({ data: { email: "settings-privacy@example.com" } });
+
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      languageIds: [],
+      positions: [],
+    });
+    await completePrivacyOnboarding(user.id, {
+      employerConfirmed: true,
+      blockEntireCorporateGroup: true,
+      additionalBlockedCompanies: [],
+      preMatchDisplayMode: "ALIAS",
+      aliasText: "א.",
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      shareLinkedInPostMatch: false,
+      sharePreciseLocationPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
+      resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
+    });
+    await prisma.professionalProfile.update({ where: { userId: user.id }, data: { status: "ACTIVE" } });
+
+    await updatePrivacySettings(user.id, {
+      blockEntireCorporateGroup: false,
+      additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
+      preMatchDisplayMode: "ALIAS",
+      aliasText: "א.",
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      shareLinkedInPostMatch: false,
+      sharePreciseLocationPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
+      resumeRetentionPreference: "KEEP",
+    });
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({
+      where: { userId: user.id },
+      include: { privacyPreference: true },
+    });
+    expect(profile.status).toBe("ACTIVE"); // unchanged
+    expect(profile.resumeRetentionPreference).toBe("KEEP");
+    expect(profile.privacyPreference?.blockEntireCorporateGroup).toBe(false);
+
+    const blocked = await prisma.blockedCompany.findMany({ where: { userId: user.id } });
+    expect(blocked.map((b) => b.companyId)).toEqual([formerCo.id]);
+
+    const confirmations = await prisma.userConfirmation.findMany({ where: { userId: user.id } });
+    expect(confirmations).toHaveLength(2); // still just the two from onboarding, no new ones
   });
 });
 

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { CompanyPicker, type CompanySelection } from "@/modules/companies/CompanyPicker";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
-import { saveProfileStepOneAction } from "@/modules/profiles/actions";
+import { saveProfileStepOneAction, type ActionState } from "@/modules/profiles/actions";
 
 interface Option {
   id: string;
@@ -44,6 +44,8 @@ export function ProfileStepOneForm({
   domains,
   languages,
   initial,
+  onSave = saveProfileStepOneAction,
+  submitLabel = "המשך להגדרות פרטיות",
 }: {
   fields: Option[];
   targetRoles: TargetRoleOption[];
@@ -52,6 +54,9 @@ export function ProfileStepOneForm({
   domains: Option[];
   languages: Option[];
   initial?: ProfileStepOneInitialData;
+  /** Defaults to the onboarding action (which redirects onward); pass a settings-page action to stay put instead. */
+  onSave?: (input: unknown) => Promise<ActionState>;
+  submitLabel?: string;
 }) {
   const [fieldId, setFieldId] = useState(initial?.professionalFieldId ?? fields[0]?.id ?? "");
   const [roleIds, setRoleIds] = useState<string[]>(initial?.targetRoleIds ?? []);
@@ -67,6 +72,7 @@ export function ProfileStepOneForm({
   const [previousPositions, setPreviousPositions] = useState<PreviousPosition[]>(initial?.previousPositions ?? []);
 
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const visibleRoles = targetRoles.filter((r) => r.professionalFieldId === fieldId);
@@ -125,7 +131,7 @@ export function ProfileStepOneForm({
     ];
 
     startTransition(async () => {
-      const result = await saveProfileStepOneAction({
+      const result = await onSave({
         professionalFieldId: fieldId,
         targetRoleIds: roleIds,
         currentRoleTitle: currentRoleTitle.trim(),
@@ -135,7 +141,11 @@ export function ProfileStepOneForm({
         languageIds,
         positions,
       });
-      if (result && !result.ok) setError(result.error ?? "משהו השתבש. נסו שוב");
+      if (result && !result.ok) {
+        setError(result.error ?? "משהו השתבש. נסו שוב");
+      } else if (result?.ok) {
+        setNotice("הפרופיל נשמר");
+      }
     });
   }
 
@@ -303,10 +313,11 @@ export function ProfileStepOneForm({
         <p className="text-left text-xs text-muted">{shortIntro.length}/400</p>
       </section>
 
+      {notice && <p className="rounded-xl bg-mint px-4 py-3 text-sm text-primary-dark">{notice}</p>}
       {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-        {pending ? "שומר…" : "המשך להגדרות פרטיות"}
+        {pending ? "שומר…" : submitLabel}
       </Button>
     </form>
   );
