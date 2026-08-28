@@ -89,6 +89,20 @@ export async function createCompanyFromUserInput(rawName: string): Promise<{ id:
 }
 
 /**
+ * For automated flows (e.g. resume extraction) that surface a raw company
+ * name string with no human picking from a typeahead: reuses an existing
+ * exact/close match if one exists, otherwise creates a new NEEDS_REVIEW
+ * company exactly like the manual "add it" path does.
+ */
+export async function resolveOrCreateCompanyByRawName(rawName: string): Promise<{ id: string; canonicalName: string }> {
+  const [best] = await searchCompanies(rawName, 1);
+  if (best && (best.quality === "exact" || best.quality === "close")) {
+    return { id: best.id, canonicalName: best.canonicalName };
+  }
+  return createCompanyFromUserInput(rawName);
+}
+
+/**
  * Merges `sourceId` into `targetId`: the source's name becomes an alias of
  * the target, every reference (employment history, current-employer links,
  * interview-library entries, blocked-company entries, takedown requests) is
