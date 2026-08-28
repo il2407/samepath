@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
 import { getConnectionDetail } from "@/modules/connections/service";
 import { ConnectionRoom } from "@/modules/connections/ConnectionRoom";
+import { PRACTICE_SESSION_CATEGORIES } from "@/modules/guides/service";
 import { Container } from "@/shared/ui/Container";
 
 export default async function ConnectionDetailPage({ params }: PageProps<"/app/connections/[id]">) {
@@ -12,7 +13,7 @@ export default async function ConnectionDetailPage({ params }: PageProps<"/app/c
 
   return (
     <Container className="max-w-2xl py-10">
-      <ConnectionRoom connection={connection} currentUserId={user.id} />
+      <ConnectionRoom connection={connection} currentUserId={user.id} categories={PRACTICE_SESSION_CATEGORIES} />
     </Container>
   );
 }

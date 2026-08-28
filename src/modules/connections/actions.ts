@@ -5,11 +5,15 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
 import {
   blockFromConnection,
+  clearConnectionGuide,
   endConnection,
   markMeeting,
   reportConnection,
+  selectConnectionGuide,
   sendMessage,
+  suggestGuideForConnection,
 } from "@/modules/connections/service";
+import { PRACTICE_SESSION_CATEGORIES, type PracticeSessionCategorySlug } from "@/modules/guides/service";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -79,4 +83,42 @@ export async function reportConnectionAction(input: unknown): Promise<ActionStat
   await reportConnection(user.id, parsed.data.connectionId, parsed.data.category, parsed.data.description);
   revalidatePath(`/app/connections/${parsed.data.connectionId}`);
   return { ok: true };
+}
+
+const categorySlugs = PRACTICE_SESSION_CATEGORIES.map((c) => c.slug) as [
+  PracticeSessionCategorySlug,
+  ...PracticeSessionCategorySlug[],
+];
+const pickGuideSchema = z.object({
+  connectionId: z.string().min(1),
+  category: z.enum(categorySlugs),
+});
+
+/** Picks a random published guide from the category and attaches it to the connection immediately — visible to both participants, still fully optional (can be cleared or re-picked any time). */
+export async function pickGuideForConnectionAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = pickGuideSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    const guide = await suggestGuideForConnection(user.id, parsed.data.connectionId, parsed.data.category);
+    if (!guide) return { ok: false, error: "אין עדיין הצעות בקטגוריה הזו" };
+
+    await selectConnectionGuide(user.id, parsed.data.connectionId, guide.id);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
+export async function clearConnectionGuideAction(connectionId: string): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    await clearConnectionGuide(user.id, connectionId);
+    revalidatePath(`/app/connections/${connectionId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
 }

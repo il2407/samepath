@@ -5,15 +5,126 @@ import { useState, useTransition } from "react";
 import { Button } from "@/shared/ui/Button";
 import {
   blockConnectionAction,
+  clearConnectionGuideAction,
   endConnectionAction,
   markMeetingAction,
+  pickGuideForConnectionAction,
   reportConnectionAction,
   sendMessageAction,
 } from "@/modules/connections/actions";
 import { reportCategoryLabels } from "@/modules/profiles/labels";
 import type { ConnectionDetail } from "@/modules/connections/service";
 
-export function ConnectionRoom({ connection, currentUserId }: { connection: ConnectionDetail; currentUserId: string }) {
+const roleLabels: Record<string, string> = { PRESENTER: "מציג/ה", LISTENER: "מקשיב/ה", BOTH: "שניכם" };
+
+function SuggestedSession({
+  connectionId,
+  selectedGuide,
+  categories,
+}: {
+  connectionId: string;
+  selectedGuide: ConnectionDetail["selectedGuide"];
+  categories: readonly { slug: string; labelHe: string }[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function pick(category: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await pickGuideForConnectionAction({ connectionId, category });
+      if (!result.ok) return setError(result.error ?? "משהו השתבש");
+      router.refresh();
+    });
+  }
+
+  function clear() {
+    startTransition(async () => {
+      await clearConnectionGuideAction(connectionId);
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6">
+      <h2 className="font-semibold text-ink">מבנה מפגש מוצע</h2>
+      <p className="mt-1 text-sm text-muted">
+        הצעה אופציונלית לתכנון הזמן ביחד, כדי ששניכם תדעו מראש למה לצפות — לא חובה להשתמש בה.
+      </p>
+
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+
+      {!selectedGuide ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {categories.map((c) => (
+            <button
+              key={c.slug}
+              type="button"
+              disabled={pending}
+              onClick={() => pick(c.slug)}
+              className="rounded-full border border-primary px-4 py-2 text-sm text-primary-dark hover:bg-mint disabled:opacity-50"
+            >
+              {c.labelHe}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-ink">{selectedGuide.title}</p>
+              <p className="text-sm text-muted">{selectedGuide.purpose}</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-mint px-3 py-1 text-xs text-primary-dark">
+              כ-{selectedGuide.suggestedDurationMinutes} דק׳
+            </span>
+          </div>
+
+          <ol className="mt-4 space-y-2">
+            {selectedGuide.steps.map((step, index) => (
+              <li key={step.id} className="rounded-xl border border-border bg-paper p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-ink">
+                    {index + 1}. {step.title}
+                  </p>
+                  <div className="flex gap-1.5 text-xs">
+                    <span className="rounded-full bg-white px-2 py-0.5 text-muted">{roleLabels[step.role] ?? step.role}</span>
+                    {typeof step.durationMinutes === "number" && (
+                      <span className="rounded-full bg-white px-2 py-0.5 text-muted">{step.durationMinutes} דק׳</span>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-1 text-sm text-ink/80">{step.prompt}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-3 flex flex-wrap gap-3 text-sm">
+            {selectedGuide.category && (
+              <button type="button" disabled={pending} onClick={() => pick(selectedGuide.category!)} className="text-primary hover:text-primary-dark">
+                הצעה אחרת מאותה קטגוריה
+              </button>
+            )}
+            <button type="button" disabled={pending} onClick={clear} className="text-muted hover:text-red-600">
+              הסרת המבנה המוצע
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ConnectionRoom({
+  connection,
+  currentUserId,
+  categories,
+}: {
+  connection: ConnectionDetail;
+  currentUserId: string;
+  categories: readonly { slug: string; labelHe: string }[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [messageText, setMessageText] = useState("");
@@ -93,6 +204,8 @@ export function ConnectionRoom({ connection, currentUserId }: { connection: Conn
           )}
         </div>
       </div>
+
+      {isActive && <SuggestedSession connectionId={connection.id} selectedGuide={connection.selectedGuide} categories={categories} />}
 
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="font-semibold text-ink">שיחה</h2>

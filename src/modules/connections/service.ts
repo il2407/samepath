@@ -3,6 +3,7 @@ import { prisma } from "@/shared/db";
 import { checkPrivacy } from "@/modules/privacy/context";
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
 import { toPostMatchDTO, type PostMatchCandidateDTO } from "@/modules/profiles/dto";
+import { getRandomGuideForCategory, type PracticeSessionCategorySlug } from "@/modules/guides/service";
 
 export async function createConnectionFromMatch(matchSuggestionId: string, userAId: string, userBId: string) {
   return prisma.connection.create({ data: { matchSuggestionId, userAId, userBId } });
@@ -35,6 +36,25 @@ export async function listConnectionsForUser(userId: string): Promise<Connection
   return items;
 }
 
+export interface SelectedGuideStep {
+  id: string;
+  order: number;
+  title: string;
+  prompt: string;
+  kind: string;
+  role: string;
+  durationMinutes: number | null;
+}
+
+export interface SelectedGuideDetail {
+  id: string;
+  title: string;
+  purpose: string;
+  suggestedDurationMinutes: number;
+  category: string | null;
+  steps: SelectedGuideStep[];
+}
+
 export interface ConnectionDetail {
   id: string;
   status: string;
@@ -42,13 +62,18 @@ export interface ConnectionDetail {
   otherParty: PostMatchCandidateDTO;
   messages: { id: string; senderId: string; body: string; createdAt: Date }[];
   meetingStatuses: { id: string; scheduledAt: Date | null; completedAt: Date | null; note: string | null }[];
+  selectedGuide: SelectedGuideDetail | null;
 }
 
 /** Runs the privacy recheck required before showing a connection, then the post-match DTO. */
 export async function getConnectionDetail(userId: string, connectionId: string): Promise<ConnectionDetail | null> {
   const connection = await prisma.connection.findUnique({
     where: { id: connectionId },
-    include: { messages: { orderBy: { createdAt: "asc" } }, meetingStatuses: { orderBy: { createdAt: "desc" } } },
+    include: {
+      messages: { orderBy: { createdAt: "asc" } },
+      meetingStatuses: { orderBy: { createdAt: "desc" } },
+      selectedGuide: { include: { steps: { orderBy: { order: "asc" } } } },
+    },
   });
   if (!connection) return null;
   if (connection.userAId !== userId && connection.userBId !== userId) return null;
@@ -73,14 +98,60 @@ export async function getConnectionDetail(userId: string, connectionId: string):
       completedAt: m.completedAt,
       note: m.note,
     })),
+    selectedGuide: connection.selectedGuide
+      ? {
+          id: connection.selectedGuide.id,
+          title: connection.selectedGuide.title,
+          purpose: connection.selectedGuide.purpose,
+          suggestedDurationMinutes: connection.selectedGuide.suggestedDurationMinutes,
+          category: connection.selectedGuide.category,
+          steps: connection.selectedGuide.steps.map((s) => ({
+            id: s.id,
+            order: s.order,
+            title: s.title,
+            prompt: s.prompt,
+            kind: s.kind,
+            role: s.role,
+            durationMinutes: s.durationMinutes,
+          })),
+        }
+      : null,
   };
+}
+
+function assertParticipant(connection: { userAId: string; userBId: string }, userId: string): void {
+  if (connection.userAId !== userId && connection.userBId !== userId) {
+    throw new Error("not a participant in this connection");
+  }
+}
+
+/** Suggests a random guide from a practice-session category for a connection — the "walk in knowing what you'll get" moment. Doesn't persist anything; selectConnectionGuide does that once the pair actually wants it. */
+export async function suggestGuideForConnection(userId: string, connectionId: string, category: PracticeSessionCategorySlug) {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+  return getRandomGuideForCategory(category);
+}
+
+/** Either participant can pick (or change) the suggested structure — it's shared, visible to both, never mandatory. */
+export async function selectConnectionGuide(userId: string, connectionId: string, guideId: string): Promise<void> {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+
+  const guide = await prisma.sessionGuide.findUnique({ where: { id: guideId }, select: { status: true } });
+  if (!guide || guide.status !== "PUBLISHED") throw new Error("guide is not available");
+
+  await prisma.connection.update({ where: { id: connectionId }, data: { selectedGuideId: guideId } });
+}
+
+export async function clearConnectionGuide(userId: string, connectionId: string): Promise<void> {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+  await prisma.connection.update({ where: { id: connectionId }, data: { selectedGuideId: null } });
 }
 
 export async function sendMessage(userId: string, connectionId: string, body: string): Promise<void> {
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-  if (connection.userAId !== userId && connection.userBId !== userId) {
-    throw new Error("not a participant in this connection");
-  }
+  assertParticipant(connection, userId);
   if (connection.status !== "ACTIVE") {
     throw new Error("connection is not active");
   }
@@ -93,9 +164,7 @@ export async function markMeeting(
   input: { scheduledAt?: Date; completedAt?: Date; note?: string },
 ): Promise<void> {
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-  if (connection.userAId !== userId && connection.userBId !== userId) {
-    throw new Error("not a participant in this connection");
-  }
+  assertParticipant(connection, userId);
   await prisma.meetingStatus.create({
     data: {
       connectionId,
@@ -109,17 +178,13 @@ export async function markMeeting(
 
 export async function endConnection(userId: string, connectionId: string): Promise<void> {
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-  if (connection.userAId !== userId && connection.userBId !== userId) {
-    throw new Error("not a participant in this connection");
-  }
+  assertParticipant(connection, userId);
   await prisma.connection.update({ where: { id: connectionId }, data: { status: "ENDED", endedAt: new Date() } });
 }
 
 export async function blockFromConnection(userId: string, connectionId: string, reason?: string): Promise<void> {
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-  if (connection.userAId !== userId && connection.userBId !== userId) {
-    throw new Error("not a participant in this connection");
-  }
+  assertParticipant(connection, userId);
   const otherUserId = connection.userAId === userId ? connection.userBId : connection.userAId;
 
   await prisma.$transaction([
@@ -139,9 +204,7 @@ export async function reportConnection(
   description: string,
 ): Promise<void> {
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-  if (connection.userAId !== userId && connection.userBId !== userId) {
-    throw new Error("not a participant in this connection");
-  }
+  assertParticipant(connection, userId);
   const otherUserId = connection.userAId === userId ? connection.userBId : connection.userAId;
 
   await prisma.$transaction([

@@ -820,6 +820,12 @@ model Connection {
   createdAt         DateTime         @default(now())
   endedAt           DateTime?
 
+  /// The suggested session structure the pair picked for their first meeting
+  /// (spec: a suggested, never-mandatory walkthrough so both sides know
+  /// what to expect going in). Nullable — most connections never pick one.
+  selectedGuideId String?
+  selectedGuide   SessionGuide? @relation(fields: [selectedGuideId], references: [id])
+
   messages        ConnectionMessage[]
   meetingStatuses MeetingStatus[]
   reports         Report[]
@@ -1020,8 +1026,9 @@ model SessionGuide {
   createdAt                DateTime    @default(now())
   updatedAt                DateTime    @updatedAt
 
-  steps  SessionGuideStep[]
-  groups Group[]
+  steps       SessionGuideStep[]
+  groups      Group[]
+  connections Connection[]
 
   @@map("session_guides")
 }
@@ -1032,14 +1039,26 @@ enum GuideStepKind {
   FOLLOWUP
 }
 
+/// Who a timed step belongs to — lets a guide express a presenter/listener
+/// split (and a later role swap) as an ordered step list without needing to
+/// know which real user is which; the UI assigns PRESENTER/LISTENER to
+/// whichever participant is "up" at that point.
+enum GuideStepRole {
+  PRESENTER
+  LISTENER
+  BOTH
+}
+
 model SessionGuideStep {
-  id      String        @id @default(cuid())
-  guideId String
-  guide   SessionGuide  @relation(fields: [guideId], references: [id], onDelete: Cascade)
-  order   Int
-  title   String
-  prompt  String        @db.VarChar(2000)
-  kind    GuideStepKind @default(AGENDA)
+  id              String        @id @default(cuid())
+  guideId         String
+  guide           SessionGuide  @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  order           Int
+  title           String
+  prompt          String        @db.VarChar(2000)
+  kind            GuideStepKind @default(AGENDA)
+  role            GuideStepRole @default(BOTH)
+  durationMinutes Int?
 
   @@index([guideId, order])
   @@map("session_guide_steps")

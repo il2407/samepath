@@ -11,5 +11,14 @@ export default defineConfig({
   },
   datasource: {
     url: env("DATABASE_URL"),
+    // Optional, unset by default. `prisma dev`'s embedded engine does not
+    // truly isolate same-instance databases (see README "Local development
+    // setup"), so its auto-derived shadow database for `migrate dev` can
+    // collide with the real one. Set this to a separate, untouched
+    // instance's URL only when you hit a shadow-db error running a
+    // migration; leave it unset otherwise (using `prisma/config`'s env()
+    // here instead of process.env would hard-fail every Prisma CLI command,
+    // including `prisma generate`, whenever this var isn't set).
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
