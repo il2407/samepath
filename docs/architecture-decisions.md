@@ -81,3 +81,30 @@ rounding issues. All lifecycle fields (`MatchStatus`, `ExperienceStatus`,
 `AccessPassStatus`, `PaymentStatus`, etc.) are Prisma enums matching the
 state machines specified, not free strings — invalid transitions become a
 type error, not a runtime surprise.
+
+## 9. No background job queue — due-date work runs lazily inline
+
+Several things in the spec are naturally "at some future time, do X":
+publish an approved interview-experience contribution after its
+publication delay, expire a stale access pass, expire an unanswered match
+suggestion, run resume text extraction after upload. None of these run on
+a scheduler. Instead, each is checked/promoted lazily at the top of the
+relevant read or write path — e.g. `publishDueExperiences()` runs at the
+start of `browseExperiences()` and `submitValidation()`, and access-pass
+expiry is checked wherever a pass's status matters — so a `PENDING`
+resource is quietly promoted to its due state the next time anything
+actually looks at it, with no separate worker process to deploy or
+monitor. Resume extraction is the one exception in spirit only: there's
+still no queue, but instead of waiting for a future read, `uploadResume`
+just runs the job synchronously inline, immediately after upload — "queued"
+in the schema (`ResumeExtractionJob.status`) but not in practice.
+
+This is a deliberate MVP tradeoff, not an oversight: it's correct for a
+single-instance deployment and keeps the app free of a second process to
+operate, at the cost of due-date accuracy being "whenever someone next
+looks" rather than exact. Revisit with a real scheduler (or at minimum a
+periodic sweep) before due-date precision matters (e.g. an access pass
+that must expire within seconds of its deadline) or before resume
+extraction needs to run somewhere other than the request that triggered
+it (e.g. genuinely large files, or a real AI parser with meaningful
+latency).
