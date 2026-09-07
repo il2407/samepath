@@ -34,6 +34,13 @@ const envSchema = z.object({
   RESUME_AI_API_KEY: z.string().optional().default(""),
 
   RATE_LIMIT_ADAPTER: z.enum(["memory"]).default("memory"),
+
+  // Shared secret an external scheduler presents to POST/GET
+  // /api/jobs/matching. Optional at the env-schema level (so environments
+  // that haven't set it up yet don't fail validation) but the route itself
+  // refuses every request with 401 while this is empty — see
+  // src/app/api/jobs/matching/route.ts and docs/scheduled-jobs.md.
+  JOB_SCHEDULER_SECRET: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;
