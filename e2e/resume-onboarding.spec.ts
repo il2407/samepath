@@ -23,6 +23,7 @@ test("upload a resume and confirm the pre-filled draft", async ({ page }) => {
   await page.goto("/register");
   await page.fill("#email", email);
   await page.fill("#password", "e2e-test-password");
+  await page.fill("#confirmPassword", "e2e-test-password");
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/app\/onboarding\/profile/);
 
