@@ -27,7 +27,6 @@ export default async function PrivacySettingsPage() {
       <div className="mt-8">
         <PrivacySettingsForm
           initial={{
-            blockEntireCorporateGroup: profile.privacyPreference?.blockEntireCorporateGroup ?? true,
             blockedCompanies: blockedCompanies.map((b) => ({
               company: { id: b.company.id, canonicalName: b.company.canonicalName },
               reason: b.reason,
@@ -37,11 +36,6 @@ export default async function PrivacySettingsPage() {
             shareFullNamePostMatch: profile.disclosurePreference?.shareFullNamePostMatch ?? false,
             photoDataUrl,
             sharePhotoPostMatch: profile.disclosurePreference?.sharePhotoPostMatch ?? false,
-            shareLinkedInPostMatch: profile.disclosurePreference?.shareLinkedInPostMatch ?? false,
-            linkedInUrl: profile.disclosurePreference?.linkedInUrl ?? "",
-            sharePreciseLocationPostMatch: profile.disclosurePreference?.sharePreciseLocationPostMatch ?? false,
-            shareEmailPostMatch: profile.disclosurePreference?.shareEmailPostMatch ?? false,
-            sharePhonePostMatch: profile.disclosurePreference?.sharePhonePostMatch ?? false,
             phoneNumber: profile.disclosurePreference?.phoneNumber ?? "",
             resumeRetentionPreference: profile.resumeRetentionPreference,
           }}

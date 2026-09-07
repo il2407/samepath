@@ -152,18 +152,36 @@ export interface BlockedCompanyInput {
 
 export interface PrivacyStepInput {
   employerConfirmed: boolean;
-  blockEntireCorporateGroup: boolean;
   additionalBlockedCompanies: BlockedCompanyInput[];
   fullName?: string;
   shareCompanyPreMatch: boolean;
+  /**
+   * Repurposed (backlog item 9/10 — see profiles/dto.ts's design note at the
+   * top of the file): no longer "reveal my full name once we're fully
+   * connected" (that's now automatic at the CONNECTED stage, unconditional).
+   * This now means "reveal my first name early, at the mutual-interest
+   * stage, before a real connection even exists." Column name kept as-is —
+   * no migration — only its meaning and the moment it's consulted changed.
+   */
   shareFullNamePostMatch: boolean;
   sharePhotoPostMatch: boolean;
-  shareLinkedInPostMatch: boolean;
-  linkedInUrl?: string;
-  sharePreciseLocationPostMatch: boolean;
-  shareEmailPostMatch: boolean;
-  sharePhonePostMatch: boolean;
   phoneNumber?: string;
+  // Deliberately no blockEntireCorporateGroup here (backlog item 6 —
+  // corporate-group blocking was removed from privacy/engine.ts, so this
+  // toggle no longer does anything; the column keeps its DB default of
+  // `true` forever, never written to `false` by user action again — see
+  // completePrivacyOnboarding below).
+  //
+  // Deliberately no shareLinkedInPostMatch/linkedInUrl here (backlog item
+  // 11/12 — LinkedIn is never disclosed, at any stage; see dto.ts).
+  //
+  // Deliberately no sharePreciseLocationPostMatch/shareEmailPostMatch/
+  // sharePhonePostMatch here (backlog item 10 — automatic reveal at the
+  // CONNECTED stage replaces these three toggles; see dto.ts's design
+  // note). `phoneNumber` above is still collected as data (there's still
+  // something to automatically reveal), just no longer gated by its own
+  // toggle.
+  //
   // Deliberately no resumeRetentionPreference here (removed — see WS1
   // backlog "duplicated résumé-retention controls"): the real decision for
   // any résumé actually uploaded during this onboarding pass is made
@@ -196,14 +214,14 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
       },
     });
 
+    // blockEntireCorporateGroup is deliberately never written here anymore
+    // (backlog item 6) — it keeps its DB default of `true` for every
+    // profile, onboarding or not; there is no longer a user action that
+    // changes it.
     await tx.privacyPreference.upsert({
       where: { profileId: profile.id },
-      update: { blockEntireCorporateGroup: input.blockEntireCorporateGroup, onboardingCompletedAt: new Date() },
-      create: {
-        profileId: profile.id,
-        blockEntireCorporateGroup: input.blockEntireCorporateGroup,
-        onboardingCompletedAt: new Date(),
-      },
+      update: { onboardingCompletedAt: new Date() },
+      create: { profileId: profile.id, onboardingCompletedAt: new Date() },
     });
 
     await tx.blockedCompany.deleteMany({ where: { userId } });
@@ -218,6 +236,12 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
       });
     }
 
+    // shareLinkedInPostMatch/linkedInUrl and
+    // sharePreciseLocationPostMatch/shareEmailPostMatch/sharePhonePostMatch
+    // are deliberately never written here anymore (backlog items 9-11) —
+    // see PrivacyStepInput's comment above. Their DB columns keep whatever
+    // value they already have (false/null for a new profile, via schema
+    // defaults on create).
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
@@ -225,11 +249,6 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
-        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
-        linkedInUrl: input.linkedInUrl,
-        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
-        shareEmailPostMatch: input.shareEmailPostMatch,
-        sharePhonePostMatch: input.sharePhonePostMatch,
         phoneNumber: input.phoneNumber,
       },
       create: {
@@ -238,11 +257,6 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
-        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
-        linkedInUrl: input.linkedInUrl,
-        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
-        shareEmailPostMatch: input.shareEmailPostMatch,
-        sharePhonePostMatch: input.sharePhonePostMatch,
         phoneNumber: input.phoneNumber,
       },
     });
@@ -282,11 +296,11 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
       data: { resumeRetentionPreference: input.resumeRetentionPreference },
     });
 
-    await tx.privacyPreference.upsert({
-      where: { profileId: profile.id },
-      update: { blockEntireCorporateGroup: input.blockEntireCorporateGroup },
-      create: { profileId: profile.id, blockEntireCorporateGroup: input.blockEntireCorporateGroup },
-    });
+    // No privacyPreference write here anymore (backlog item 6):
+    // blockEntireCorporateGroup was the only field this settings page ever
+    // changed on that row, and it's no longer user-configurable — the row
+    // itself was already created during onboarding (completePrivacyOnboarding
+    // above), so there's nothing left for this function to upsert.
 
     await tx.blockedCompany.deleteMany({ where: { userId } });
     if (input.additionalBlockedCompanies.length > 0) {
@@ -300,6 +314,9 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
       });
     }
 
+    // See the matching comment in completePrivacyOnboarding above — LinkedIn
+    // and the three legacy per-field post-match toggles are deliberately
+    // never written here anymore.
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
@@ -307,11 +324,6 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
         shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
-        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
-        linkedInUrl: input.linkedInUrl,
-        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
-        shareEmailPostMatch: input.shareEmailPostMatch,
-        sharePhonePostMatch: input.sharePhonePostMatch,
         phoneNumber: input.phoneNumber,
       },
       create: {
@@ -320,11 +332,6 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
         shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
-        shareLinkedInPostMatch: input.shareLinkedInPostMatch,
-        linkedInUrl: input.linkedInUrl,
-        sharePreciseLocationPostMatch: input.sharePreciseLocationPostMatch,
-        shareEmailPostMatch: input.shareEmailPostMatch,
-        sharePhonePostMatch: input.sharePhonePostMatch,
         phoneNumber: input.phoneNumber,
       },
     });
