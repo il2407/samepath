@@ -48,7 +48,7 @@ export function Privacy() {
             </p>
 
             <div className="mt-6 text-center">
-              <Link href="/privacy" className="text-sm font-semibold text-paper underline underline-offset-4 hover:text-paper/80">
+              <Link href="#faq" className="text-sm font-semibold text-paper underline underline-offset-4 hover:text-paper/80">
                 קראו עוד על הפרטיות ב־SamePath
               </Link>
             </div>
