@@ -5,6 +5,9 @@ import { CompanyPicker, type CompanySelection } from "@/modules/companies/Compan
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
 import { saveProfileStepOneAction, type ActionState } from "@/modules/profiles/actions";
+import { genderLabels } from "@/modules/profiles/labels";
+
+type Gender = "MALE" | "FEMALE";
 
 interface Option {
   id: string;
@@ -34,6 +37,7 @@ export interface ProfileStepOneInitialData {
   currentCompany: CompanySelection | null;
   currentStartMonth: string;
   previousPositions: PreviousPosition[];
+  gender?: Gender | null;
 }
 
 export function ProfileStepOneForm({
@@ -65,6 +69,7 @@ export function ProfileStepOneForm({
   const [shortIntro, setShortIntro] = useState(initial?.shortIntro ?? "");
   const [tagIds, setTagIds] = useState<string[]>(initial?.tagIds ?? []);
   const [languageIds, setLanguageIds] = useState<string[]>(initial?.languageIds ?? []);
+  const [gender, setGender] = useState<Gender>(initial?.gender ?? "MALE");
 
   const [currentCompany, setCurrentCompany] = useState<CompanySelection | null>(initial?.currentCompany ?? null);
   const [currentStartMonth, setCurrentStartMonth] = useState(initial?.currentStartMonth ?? "");
@@ -140,6 +145,7 @@ export function ProfileStepOneForm({
         tagIds,
         languageIds,
         positions,
+        gender,
       });
       if (result && !result.ok) {
         setError(result.error ?? "משהו השתבש. נסו שוב");
@@ -200,6 +206,19 @@ export function ProfileStepOneForm({
         </div>
       </section>
 
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-ink">מגדר</h2>
+        <p className="text-sm text-muted">משמש רק כדי להתאים למועמדים/ות לפי העדפת המגדר שלהם — לא מוצג לפני אישור הדדי.</p>
+        <div className="flex flex-wrap gap-4">
+          {(Object.entries(genderLabels) as [Gender, string][]).map(([value, label]) => (
+            <label key={value} className="flex items-center gap-2 text-sm text-ink">
+              <input type="radio" checked={gender === value} onChange={() => setGender(value)} />
+              {label}
+            </label>
+          ))}
+        </div>
+      </section>
+
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-ink">ניסיון תעסוקתי</h2>
         <p className="text-sm text-muted">
@@ -226,7 +245,7 @@ export function ProfileStepOneForm({
               <button
                 type="button"
                 onClick={() => removePreviousPosition(p.key)}
-                className="text-sm text-muted hover:text-red-600"
+                className="text-sm text-muted hover:text-danger"
               >
                 הסרה
               </button>
@@ -314,7 +333,7 @@ export function ProfileStepOneForm({
       </section>
 
       {notice && <p className="rounded-xl bg-mint px-4 py-3 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "שומר…" : submitLabel}

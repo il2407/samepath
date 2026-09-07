@@ -70,3 +70,8 @@ export function generateResumeStorageKey(userId: string, originalFilename: strin
   const ext = path.extname(originalFilename).toLowerCase().replace(/[^a-z0-9.]/g, "");
   return `resumes/${userId}/${randomUUID()}${ext}`;
 }
+
+export function generatePhotoStorageKey(userId: string, originalFilename: string): string {
+  const ext = path.extname(originalFilename).toLowerCase().replace(/[^a-z0-9.]/g, "");
+  return `profile-photos/${userId}/${randomUUID()}${ext}`;
+}

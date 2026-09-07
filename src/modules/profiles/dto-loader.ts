@@ -11,6 +11,7 @@ export async function loadRawProfileForDto(userId: string): Promise<RawProfileFo
         professionalField: { select: { labelHe: true } },
         seniorityBand: { select: { labelHe: true } },
         region: { select: { labelHe: true } },
+        currentCompany: { select: { canonicalName: true } },
         targetRoles: { include: { targetRole: { select: { labelHe: true } } } },
         tags: { include: { tag: { select: { labelHe: true } } } },
         languages: { include: { language: { select: { labelHe: true } } } },
@@ -39,6 +40,8 @@ export async function loadRawProfileForDto(userId: string): Promise<RawProfileFo
       : null,
     availabilitySlots: profile.availabilitySlots,
     region: profile.region,
+    company: profile.currentCompany,
+    cvVerifiedAt: profile.cvVerifiedAt,
     disclosurePreference: profile.disclosurePreference,
     userEmail: user.email,
   };

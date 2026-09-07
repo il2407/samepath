@@ -57,14 +57,14 @@ export function ResumeDraftReview({
     <div className="rounded-2xl border border-border bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">טיוטה מתוך {originalFilename}</h2>
-        <button type="button" disabled={pending} onClick={discard} className="text-sm text-muted hover:text-red-600">
+        <button type="button" disabled={pending} onClick={discard} className="text-sm text-muted hover:text-danger">
           מחיקת הטיוטה והתחלה ידנית
         </button>
       </div>
       <p className="mt-1 text-sm text-muted">
         עברו על השדות למטה ותקנו כרצונכם — שום דבר לא נשמר עד שתלחצו על הכפתור בתחתית הטופס.
       </p>
-      {discardError && <p className="mt-2 text-sm text-red-600">{discardError}</p>}
+      {discardError && <p className="mt-2 text-sm text-danger">{discardError}</p>}
 
       <div className="mt-4 rounded-xl bg-paper p-3">
         <label className="flex items-center gap-2 text-sm text-ink">

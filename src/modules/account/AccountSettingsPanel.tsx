@@ -48,9 +48,9 @@ export function AccountSettingsPanel({ isPaused }: { isPaused: boolean }) {
         </a>
       </section>
 
-      <section className="rounded-2xl border border-red-200 bg-red-50 p-6">
-        <h2 className="font-semibold text-red-800">מחיקת חשבון</h2>
-        <p className="mt-2 text-sm text-red-700">
+      <section className="rounded-2xl border border-danger/20 bg-danger/10 p-6">
+        <h2 className="font-semibold text-danger-dark">מחיקת חשבון</h2>
+        <p className="mt-2 text-sm text-danger-dark">
           פעולה זו סופית. החשבון ייחסם לכניסה, ופרטים מזהים (שם מלא, טלפון, LinkedIn) יימחקו. תרומות
           שפורסמו בספריית הראיונות יישארו אנונימיות בקהילה, כפי שהן היום.
         </p>
@@ -58,24 +58,24 @@ export function AccountSettingsPanel({ isPaused }: { isPaused: boolean }) {
           <button
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
-            className="mt-3 rounded-full border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+            className="mt-3 rounded-full border border-danger/35 bg-white px-4 py-2 text-sm font-medium text-danger-dark hover:bg-danger/15"
           >
             מחיקת החשבון שלי
           </button>
         ) : (
           <div className="mt-3 space-y-3">
-            <p className="text-sm text-red-700">כדי לאשר, הקלידו &quot;מחיקה&quot; בשדה למטה.</p>
+            <p className="text-sm text-danger-dark">כדי לאשר, הקלידו &quot;מחיקה&quot; בשדה למטה.</p>
             <input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              className="w-full max-w-xs rounded-xl border border-red-300 bg-white px-4 py-2"
+              className="w-full max-w-xs rounded-xl border border-danger/35 bg-white px-4 py-2"
             />
             <div className="flex gap-2">
               <button
                 type="button"
                 disabled={confirmText !== "מחיקה" || pending}
                 onClick={handleDelete}
-                className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-full bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger-dark disabled:opacity-50"
               >
                 אישור מחיקה סופית
               </button>

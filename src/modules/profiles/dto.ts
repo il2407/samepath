@@ -41,12 +41,15 @@ export interface RawProfileForDto {
   } | null;
   availabilitySlots: AvailabilitySlotData[];
   region: { labelHe: string } | null;
+  company: { canonicalName: string } | null;
+  /** ProfessionalProfile.cvVerifiedAt — see toPreMatchDTO.cvVerified. */
+  cvVerifiedAt: Date | null;
   disclosurePreference: {
-    preMatchDisplayMode: "ALIAS" | "FIRST_NAME";
-    aliasText: string | null;
-    firstName: string | null;
     fullName: string | null;
+    shareCompanyPreMatch: boolean;
     shareFullNamePostMatch: boolean;
+    photoStorageKey: string | null;
+    photoMimeType: string | null;
     sharePhotoPostMatch: boolean;
     shareLinkedInPostMatch: boolean;
     linkedInUrl: string | null;
@@ -59,7 +62,6 @@ export interface RawProfileForDto {
 }
 
 export interface PreMatchCandidateDTO {
-  displayName: string;
   professionalField: string | null;
   seniorityBand: string | null;
   targetRoles: string[];
@@ -71,23 +73,39 @@ export interface PreMatchCandidateDTO {
   connectionMode: string;
   reasons: string[];
   availabilitySummary: string[];
-}
-
-function displayName(disclosure: RawProfileForDto["disclosurePreference"]): string {
-  if (!disclosure) return "משתמש/ת SamePath";
-  if (disclosure.preMatchDisplayMode === "FIRST_NAME" && disclosure.firstName) return disclosure.firstName;
-  return disclosure.aliasText || "משתמש/ת SamePath";
+  /**
+   * Null unless the candidate explicitly opted into `shareCompanyPreMatch`.
+   * Every candidate reaching this DTO has already passed the privacy hard
+   * filter (never same company, never a company either side blocked), so
+   * revealing it here only ever surfaces an employer neither side has ruled
+   * out — but it's still the owning user's opt-in, never automatic.
+   */
+  company: string | null;
+  /**
+   * True once the candidate uploaded a CV and confirmed the extracted
+   * draft into their profile (see ProfessionalProfile.cvVerifiedAt) — a
+   * trust signal shown before mutual approval alongside the other
+   * categorical fields. Unlike `company`, this isn't an opt-in disclosure:
+   * it reveals nothing identifying, only that the profile's info was
+   * cross-checked against a real document at least once.
+   */
+  cvVerified: boolean;
 }
 
 /**
  * Everything visible before mutual approval. Deliberately does NOT accept
- * (and therefore cannot leak) name, photo, employer, resume, email, phone,
- * LinkedIn, or precise location — those fields simply aren't part of the
- * input shape this function reads from.
+ * (and therefore cannot leak) name, photo, resume, email, phone, LinkedIn,
+ * or precise location — those fields simply aren't part of the input shape
+ * this function reads from. There is no display name here at all: the UI
+ * shows a system-generated nickname + avatar emoji instead (see
+ * src/modules/profiles/nickname.ts), seeded from the match suggestion, never
+ * from profile data. Employer is the one exception, and only when the
+ * candidate explicitly opted into `shareCompanyPreMatch`; every candidate
+ * reaching this function already passed the privacy hard filter, so this can
+ * only ever reveal a company neither side has ruled out.
  */
 export function toPreMatchDTO(raw: RawProfileForDto): PreMatchCandidateDTO {
   return {
-    displayName: displayName(raw.disclosurePreference),
     professionalField: raw.professionalField?.labelHe ?? null,
     seniorityBand: raw.seniorityBand?.labelHe ?? null,
     targetRoles: raw.targetRoles.map((r) => r.labelHe),
@@ -99,6 +117,8 @@ export function toPreMatchDTO(raw: RawProfileForDto): PreMatchCandidateDTO {
     connectionMode: raw.connectionPreference?.mode ?? "BOTH",
     reasons: raw.connectionPreference?.reasons ?? [],
     availabilitySummary: formatAvailabilitySummary(raw.availabilitySlots),
+    company: raw.disclosurePreference?.shareCompanyPreMatch ? (raw.company?.canonicalName ?? null) : null,
+    cvVerified: Boolean(raw.cvVerifiedAt),
   };
 }
 

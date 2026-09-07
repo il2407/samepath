@@ -34,7 +34,7 @@ export function RewardPolicyEditor({ policyKey, description, valueJson }: { poli
         className="mt-3 w-full rounded-xl border border-border bg-paper px-3 py-2 font-mono text-xs"
       />
       {notice && <p className="mt-2 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <button
         type="button"
         disabled={pending}

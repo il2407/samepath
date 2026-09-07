@@ -27,7 +27,7 @@ export function PurchaseButton({ productKey, label }: { productKey: string; labe
       <Button onClick={handlePurchase} disabled={pending} className="px-5 py-2.5 text-sm">
         {pending ? "מעבד…" : label}
       </Button>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

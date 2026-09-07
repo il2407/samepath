@@ -159,58 +159,40 @@ export function computeScoreBreakdown(
 export interface SafeReason {
   code: string;
   labelHe: string;
+  /** This factor's own sub-score, rounded 0-100 — shown next to the label. */
+  percentage: number;
 }
 
 const REASON_THRESHOLD = 0.5;
 const MAX_REASONS = 3;
 
 /**
- * Safe, human-readable reasons a match may be relevant — derived only from
- * which sub-scores are strong, never the raw numbers or any privacy-gate
- * internals. This is what a user is allowed to see; the full breakdown
- * (ScoreBreakdown) is for admin/test use only.
+ * Human-readable reasons a match may be relevant, each carrying its own
+ * per-factor percentage — derived only from which sub-scores are strong
+ * (>= REASON_THRESHOLD), never from privacy-gate internals. Only a factor
+ * that genuinely clears the threshold is shown, so a weak or low-scoring
+ * match may surface fewer than MAX_REASONS reasons, or none.
  */
 export function generateSafeReasons(breakdown: ScoreBreakdown): SafeReason[] {
   const candidates: SafeReason[] = [];
   if (breakdown.targetRoleScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "target_role", labelHe: "מחפש/ת תפקיד דומה לשלך" });
+    candidates.push({ code: "target_role", labelHe: "מחפש/ת תפקיד דומה לשלך", percentage: Math.round(breakdown.targetRoleScore * 100) });
   }
   if (breakdown.fieldScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "field", labelHe: "אותו תחום מקצועי" });
+    candidates.push({ code: "field", labelHe: "אותו תחום מקצועי", percentage: Math.round(breakdown.fieldScore * 100) });
   }
   if (breakdown.experienceScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "experience", labelHe: "רמת ניסיון דומה" });
+    candidates.push({ code: "experience", labelHe: "רמת ניסיון דומה", percentage: Math.round(breakdown.experienceScore * 100) });
   }
   if (breakdown.availabilityScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "availability", labelHe: "זמינות חופפת" });
+    candidates.push({ code: "availability", labelHe: "זמינות חופפת", percentage: Math.round(breakdown.availabilityScore * 100) });
   }
   if (breakdown.skillsScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "skills", labelHe: "כישורים ותחומים משותפים" });
+    candidates.push({ code: "skills", labelHe: "כישורים ותחומים משותפים", percentage: Math.round(breakdown.skillsScore * 100) });
   }
   if (breakdown.languageScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "style", labelHe: "שפה, אזור זמן וסגנון חיבור תואמים" });
+    candidates.push({ code: "style", labelHe: "שפה, אזור זמן וסגנון חיבור תואמים", percentage: Math.round(breakdown.languageScore * 100) });
   }
 
-  return candidates
-    .sort((a, b) => scoreFor(breakdown, b.code) - scoreFor(breakdown, a.code))
-    .slice(0, MAX_REASONS);
-}
-
-function scoreFor(breakdown: ScoreBreakdown, code: string): number {
-  switch (code) {
-    case "target_role":
-      return breakdown.targetRoleScore;
-    case "field":
-      return breakdown.fieldScore;
-    case "experience":
-      return breakdown.experienceScore;
-    case "availability":
-      return breakdown.availabilityScore;
-    case "skills":
-      return breakdown.skillsScore;
-    case "style":
-      return breakdown.languageScore;
-    default:
-      return 0;
-  }
+  return candidates.sort((a, b) => b.percentage - a.percentage).slice(0, MAX_REASONS);
 }

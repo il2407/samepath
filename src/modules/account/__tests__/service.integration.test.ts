@@ -11,10 +11,10 @@ beforeEach(async () => {
 
 describe("exportAccountData", () => {
   it("includes the user's own data", async () => {
-    const user = await createTestUser({ aliasText: "מ." });
+    const user = await createTestUser();
     const data = await exportAccountData(user.user.id);
     expect(data.user.email).toBe(user.user.email);
-    expect(data.profile?.disclosurePreference?.aliasText).toBe("מ.");
+    expect(data.profile?.disclosurePreference).not.toBeNull();
   });
 });
 

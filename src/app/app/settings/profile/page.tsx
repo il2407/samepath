@@ -5,6 +5,10 @@ import { getProfileEditData } from "@/modules/profiles/service";
 import { loadOnboardingFormOptions } from "@/modules/reference-data/service";
 import { ProfileStepOneForm } from "@/modules/profiles/ProfileStepOneForm";
 import { updateProfileSettingsAction } from "@/modules/profiles/actions";
+import { getResumeStatusForUser } from "@/modules/resumes/service";
+import { ResumeUploadCard } from "@/modules/resumes/ResumeUploadCard";
+import { ResumeVerifyCard } from "@/modules/resumes/ResumeVerifyCard";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 import { Container } from "@/shared/ui/Container";
 
 export const metadata: Metadata = { title: "עריכת פרופיל — SamePath" };
@@ -15,7 +19,11 @@ function toMonthString(date: Date): string {
 
 export default async function ProfileSettingsPage() {
   const user = await requireUser();
-  const [profile, options] = await Promise.all([getProfileEditData(user.id), loadOnboardingFormOptions()]);
+  const [profile, options, resumeStatus] = await Promise.all([
+    getProfileEditData(user.id),
+    loadOnboardingFormOptions(),
+    getResumeStatusForUser(user.id),
+  ]);
   if (!profile) redirect("/app/onboarding/profile");
 
   const currentPosition = profile.employmentPositions.find((p) => p.isCurrent) ?? null;
@@ -27,6 +35,23 @@ export default async function ProfileSettingsPage() {
       <p className="mt-2 text-muted">
         לשינוי המעסיק הנוכחי תידרש אישור מחדש בהגדרות הפרטיות לפני הפעלה מלאה של ההתאמות.
       </p>
+
+      <div className="mt-8">
+        {profile.cvVerifiedAt ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-happy/40 bg-happy/10 p-4 text-sm text-ink">
+            <CvVerifiedBadge />
+            קורות החיים שלכם אומתו — התג הזה מוצג למועמדים אחרים ומעיד על אמינות הפרופיל.
+          </div>
+        ) : resumeStatus?.draft ? (
+          <ResumeVerifyCard
+            uploadId={resumeStatus.uploadId}
+            originalFilename={resumeStatus.originalFilename}
+            extracted={resumeStatus.draft.extracted}
+          />
+        ) : (
+          <ResumeUploadCard extractionFailed={resumeStatus?.extractionFailed ?? false} />
+        )}
+      </div>
 
       <div className="mt-8">
         <ProfileStepOneForm
@@ -50,6 +75,7 @@ export default async function ProfileSettingsPage() {
             shortIntro: profile.shortIntro ?? "",
             tagIds: profile.tags.map((t) => t.tagId),
             languageIds: profile.languages.map((l) => l.languageId),
+            gender: profile.gender,
             currentCompany: currentPosition?.company
               ? { id: currentPosition.company.id, canonicalName: currentPosition.company.canonicalName }
               : null,

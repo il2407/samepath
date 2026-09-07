@@ -34,7 +34,7 @@ export function LibraryAdminRowActions({ experienceId, status }: { experienceId:
       {showReason ? (
         <div className="flex items-center gap-2">
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="סיבה" className="w-32 rounded-lg border border-border px-2 py-1" />
-          <button type="button" disabled={pending} onClick={confirm} className="text-red-600 hover:underline">
+          <button type="button" disabled={pending} onClick={confirm} className="text-danger hover:underline">
             אישור
           </button>
           <button type="button" onClick={() => setShowReason(null)} className="text-muted hover:underline">
@@ -48,12 +48,12 @@ export function LibraryAdminRowActions({ experienceId, status }: { experienceId:
               הסרה זמנית לבדיקה
             </button>
           )}
-          <button type="button" onClick={() => setShowReason("remove")} className="text-red-600 hover:underline">
+          <button type="button" onClick={() => setShowReason("remove")} className="text-danger hover:underline">
             הסרה סופית
           </button>
         </div>
       )}
-      {error && <p className="mt-1 text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-danger">{error}</p>}
     </div>
   );
 }

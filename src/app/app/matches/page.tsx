@@ -22,10 +22,44 @@ export default async function MatchesPage() {
         <RefreshMatchesButton />
       </div>
       <p className="mt-2 text-muted">
-        התאמות אנונימיות ומצומצמות. שם מלא, תמונה ומעסיק נחשפים רק לאחר אישור הדדי.
+        כל הצעה מוצגת עם כינוי ואייקון אקראיים.
+        <br />
+        שם מלא, תמונה ומעסיק נחשפים רק לאחר אישור הדדי.
       </p>
 
-      <div className="mt-8 space-y-4">
+      <details className="group mt-4 rounded-2xl border border-border bg-white p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus">
+          איך מחושב אחוז ההתאמה?
+          <span className="shrink-0 font-mono text-primary transition-transform group-open:rotate-45">+</span>
+        </summary>
+        <div className="mt-3 text-sm leading-relaxed text-muted">
+          <p>האחוז משקלל יחד כמה גורמים, לפי סדר ההשפעה שלהם על הציון הכולל:</p>
+          <ul className="mt-2 list-disc space-y-1 ps-5">
+            <li>
+              <strong className="text-ink">המשפיעים ביותר:</strong> תפקיד היעד שאתם מחפשים והתחום המקצועי.
+            </li>
+            <li>
+              <strong className="text-ink">השפעה בינונית:</strong> רמת הניסיון וחפיפת הזמינות.
+            </li>
+            <li>
+              <strong className="text-ink">משלימים את התמונה:</strong> כישורים ותגיות משותפות, שפה, אזור זמן
+              וסגנון החיבור המועדף.
+            </li>
+          </ul>
+          <p className="mt-3">
+            כל גורם מקבל ציון משלו לפי מידת ההתאמה בו, וכל ציון נכנס לחישוב הכולל ביחס למידת ההשפעה
+            שלו כפי שמפורט למעלה — כך שגורם משמעותי כמו תפקיד היעד מכריע יותר מגורם משני כמו סגנון
+            החיבור המועדף.
+          </p>
+          <p className="mt-3">
+            בכל כרטיס הצעה, &quot;למה זה מתאים&quot; מציג עד שלושה מהגורמים החזקים ביותר בהתאמה הזו, עם
+            האחוז הספציפי של כל אחד מהם. ההצעות למטה תמיד מסודרות מהאחוז הכולל הגבוה ביותר לנמוך
+            ביותר.
+          </p>
+        </div>
+      </details>
+
+      <div className="mt-6 space-y-4">
         {suggestions.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center text-muted">
             אין כרגע הצעות התאמה. לחצו על &quot;חיפוש התאמות חדשות&quot; כדי לבדוק שוב.
@@ -36,6 +70,8 @@ export default async function MatchesPage() {
               key={s.id}
               matchSuggestionId={s.id}
               candidate={s.candidate}
+              codeName={s.codeName}
+              matchPercentage={s.matchPercentage}
               reasons={s.reasons}
               waitingOnOther={s.waitingOnOther}
             />

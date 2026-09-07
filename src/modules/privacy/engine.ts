@@ -14,6 +14,8 @@
 // group/session, never to explain why it's missing.
 
 export type ConnectionFormat = "ONE_ON_ONE" | "GROUP" | "BOTH";
+export type Gender = "MALE" | "FEMALE";
+export type GenderPreference = "MALE" | "FEMALE" | "BOTH";
 
 export interface AvailabilitySlot {
   dayOfWeek: number; // 0 = Sunday .. 6 = Saturday
@@ -36,6 +38,9 @@ export interface EligibilityProfile {
   connectionFormat: ConnectionFormat;
   timezone: string;
   availability: AvailabilitySlot[];
+  /** Self-reported, optional — null when not disclosed. */
+  gender: Gender | null;
+  genderPreference: GenderPreference;
 }
 
 export interface PrivacyCheckInput {
@@ -60,7 +65,8 @@ export type PrivacyRejectionReason =
   | "user_blocked"
   | "never_again"
   | "incompatible_connection_type"
-  | "no_availability_overlap";
+  | "no_availability_overlap"
+  | "incompatible_gender_preference";
 
 export type PrivacyCheckResult =
   | { allowed: true }
@@ -72,6 +78,25 @@ function formatsCompatible(a: ConnectionFormat, b: ConnectionFormat, required?: 
   }
   if (a === "BOTH" || b === "BOTH") return true;
   return a === b;
+}
+
+/**
+ * A preference of BOTH accepts anyone. A preference of MALE/FEMALE can only
+ * be satisfied by a disclosed gender that matches — an undisclosed (null)
+ * gender can never satisfy a non-BOTH preference, on either side, since
+ * there's nothing to verify it against.
+ */
+function preferenceAccepts(preference: GenderPreference, gender: Gender | null): boolean {
+  if (preference === "BOTH") return true;
+  return gender === preference;
+}
+
+/** Mutual: each side's genderPreference must accept the other's disclosed gender. */
+function gendersCompatible(subject: EligibilityProfile, candidate: EligibilityProfile): boolean {
+  return (
+    preferenceAccepts(subject.genderPreference, candidate.gender) &&
+    preferenceAccepts(candidate.genderPreference, subject.gender)
+  );
 }
 
 function isIneligible(p: EligibilityProfile): boolean {
@@ -166,6 +191,10 @@ export function evaluatePrivacy(input: PrivacyCheckInput): PrivacyCheckResult {
 
   if (!formatsCompatible(subject.connectionFormat, candidate.connectionFormat, input.requiredFormat)) {
     return { allowed: false, reasonCode: "incompatible_connection_type" };
+  }
+
+  if (!gendersCompatible(subject, candidate)) {
+    return { allowed: false, reasonCode: "incompatible_gender_preference" };
   }
 
   if (

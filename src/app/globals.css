@@ -1,18 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --color-ink: #17201e;
-  --color-muted: #65706d;
-  --color-paper: #f6f8f5;
+  /* "Quiet Confidence" palette: warm off-white neutrals, a single forest-green
+     brand hue for CTAs/selected states, a small warm gold accent used sparingly
+     for human/optimistic highlights, a dedicated blue reserved for keyboard
+     focus rings, and a muted red reserved strictly for errors/destructive
+     actions. Legacy token names (happy/calm/mint/lime/sand) are kept from
+     earlier palette passes so existing classNames don't need renaming — they
+     now alias into this palette instead of their old hues. */
+  --color-ink: #17211d;
+  --color-muted: #52615a;
+  --color-paper: #f8faf7;
   --color-white: #ffffff;
-  --color-primary: #0f695a;
-  --color-primary-dark: #0b5045;
-  --color-mint: #e5f4ef;
-  --color-lime: #cdea8a;
-  --color-warm-surface: #f2eee6;
-  --color-border: #dfe6e2;
+  --color-warm-surface: #eff5f1;
+  --color-border: #dce5df;
+
+  --color-primary: #235c47;
+  --color-primary-dark: #194a38;
+
+  /* Warm gold accent — small human/optimistic highlights only, never a
+     dominant background or large CTA. */
+  --color-happy: #f1c98a;
+  --color-happy-dark: #8a6215;
+
+  /* "Calm" alias now points at the same brand green as primary; kept as a
+     separate name only because a handful of marketing components already
+     reference it as a distinct tone. */
+  --color-calm: #235c47;
+  --color-calm-dark: #194a38;
+
+  /* Light green surface — privacy messages, success states, matching
+     indicators, and soft tags. */
+  --color-mint: #e3f2ea;
+  --color-lime: #e3f2ea;
+
+  /* Warm neutral surface — secondary panels, chips, and large section washes
+     that shouldn't read as "green" or "gold". */
+  --color-sand: #eff5f1;
+
+  /* Reserved, single-purpose colors: never reused decoratively. */
+  --color-focus: #3b82a0;
+  --color-danger: #b54747;
+  --color-danger-dark: #8f3a3a;
 
   --font-body: var(--font-rubik), "Segoe UI", Tahoma, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Consolas, monospace;
 }
 
 @theme inline {
@@ -20,13 +52,22 @@
   --color-muted: var(--color-muted);
   --color-paper: var(--color-paper);
   --color-white: var(--color-white);
-  --color-primary: var(--color-primary);
-  --color-primary-dark: var(--color-primary-dark);
-  --color-mint: var(--color-mint);
-  --color-lime: var(--color-lime);
   --color-warm-surface: var(--color-warm-surface);
   --color-border: var(--color-border);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-happy: var(--color-happy);
+  --color-happy-dark: var(--color-happy-dark);
+  --color-calm: var(--color-calm);
+  --color-calm-dark: var(--color-calm-dark);
+  --color-mint: var(--color-mint);
+  --color-lime: var(--color-lime);
+  --color-sand: var(--color-sand);
+  --color-focus: var(--color-focus);
+  --color-danger: var(--color-danger);
+  --color-danger-dark: var(--color-danger-dark);
   --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
 body {
@@ -35,9 +76,36 @@ body {
   font-family: var(--font-body);
 }
 
-/* Visible, high-contrast focus ring for keyboard users (WCAG). */
+::selection {
+  background: var(--color-primary);
+  color: var(--color-paper);
+}
+
+/* Visible, high-contrast focus ring for keyboard users (WCAG). Uses the
+   dedicated focus-blue token, kept distinct from the brand green so a focus
+   ring is never confused with a "selected"/primary state. */
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: 1px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
 }

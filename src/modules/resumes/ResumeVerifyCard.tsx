@@ -1,0 +1,94 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { discardResumeDraftAction, verifyResumeFromSettingsAction, type ActionState } from "@/modules/resumes/actions";
+import type { StoredExtractedResumeData } from "@/modules/resumes/dto";
+
+/**
+ * The settings-page counterpart to ResumeDraftReview: an already-active
+ * profile doesn't need its fields re-entered from the draft, so this just
+ * shows what was found in the file and lets the user confirm it's really
+ * theirs — that confirmation is what earns the CV-verified mark (see
+ * verifyResumeFromSettingsAction).
+ */
+export function ResumeVerifyCard({
+  uploadId,
+  originalFilename,
+  extracted,
+}: {
+  uploadId: string;
+  originalFilename: string;
+  extracted: StoredExtractedResumeData;
+}) {
+  const router = useRouter();
+  const [keepFile, setKeepFile] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function confirm() {
+    setError(null);
+    startTransition(async () => {
+      const result: ActionState = await verifyResumeFromSettingsAction({ uploadId, keepFile });
+      if (!result.ok) return setError(result.error ?? "משהו השתבש");
+      router.refresh();
+    });
+  }
+
+  function discard() {
+    setError(null);
+    startTransition(async () => {
+      const result = await discardResumeDraftAction(uploadId);
+      if (!result.ok) return setError(result.error ?? "משהו השתבש");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5">
+      <h2 className="text-lg font-semibold text-ink">מצאנו את זה ב-{originalFilename}</h2>
+      <p className="mt-1 text-sm text-muted">
+        זה לא משנה את הפרופיל הקיים שלכם — רק מאשר שקורות החיים שהעליתם באמת שייכים לכם, ומוסיף לכם
+        תג &quot;קו״ח מאומתים&quot; שמופיע בפני מועמדים אחרים.
+      </p>
+
+      {extracted.positions.length > 0 && (
+        <ul className="mt-4 space-y-2">
+          {extracted.positions.map((p, index) => (
+            <li key={index} className="rounded-xl bg-paper p-3 text-sm text-ink">
+              <span className="font-medium">{p.title}</span> · {p.companyName}
+              <span className="text-muted">
+                {" "}
+                ({p.startMonth}
+                {p.endMonth ? `–${p.endMonth}` : p.isCurrent ? "–היום" : ""})
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-4 rounded-xl bg-paper p-3">
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" checked={keepFile} onChange={(e) => setKeepFile(e.target.checked)} />
+          לשמור את קובץ קורות החיים המקורי במערכת (ברירת המחדל: הקובץ נמחק לאחר האישור)
+        </label>
+      </div>
+
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={confirm}
+          className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+        >
+          {pending ? "מאשר/ת…" : "כן, אלה קורות החיים שלי — אישור"}
+        </button>
+        <button type="button" disabled={pending} onClick={discard} className="text-sm text-muted hover:text-danger">
+          לא עכשיו, מחיקת הטיוטה
+        </button>
+      </div>
+    </div>
+  );
+}

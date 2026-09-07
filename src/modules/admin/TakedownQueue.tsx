@@ -47,7 +47,7 @@ function TakedownCard({ row }: { row: TakedownRow }) {
       </p>
       <p className="mt-2 text-sm text-ink/80">{row.reason}</p>
       {!row.experienceId && <p className="mt-2 text-xs text-muted">לא מקושר לתוכן ספציפי בספרייה — אישור לא יסיר תוכן אוטומטית.</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           value={note}

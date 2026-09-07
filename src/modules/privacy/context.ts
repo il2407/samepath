@@ -38,6 +38,8 @@ export async function loadEligibilityProfile(userId: string): Promise<Eligibilit
     blockedUserIds: blockedUsers.map((b) => b.blockedUserId),
     connectionFormat: profile?.connectionPreference?.format ?? "BOTH",
     timezone: profile?.connectionPreference?.timezone ?? "Asia/Jerusalem",
+    gender: profile?.gender ?? null,
+    genderPreference: profile?.connectionPreference?.genderPreference ?? "BOTH",
     availability:
       profile?.availabilitySlots.map((s) => ({
         dayOfWeek: s.dayOfWeek,

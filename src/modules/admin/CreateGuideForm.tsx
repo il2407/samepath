@@ -88,7 +88,7 @@ export function CreateGuideForm() {
               <option value="PROMPT">שאלה מנחה</option>
               <option value="FOLLOWUP">המשך</option>
             </select>
-            <button type="button" onClick={() => removeStep(s.key)} className="text-sm text-muted hover:text-red-600">
+            <button type="button" onClick={() => removeStep(s.key)} className="text-sm text-muted hover:text-danger">
               הסרה
             </button>
           </div>
@@ -104,7 +104,7 @@ export function CreateGuideForm() {
       </label>
 
       {notice && <p className="text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <Button type="submit" disabled={pending} className="px-4 py-2 text-sm">
         {pending ? "יוצר…" : "יצירת מדריך"}
       </Button>

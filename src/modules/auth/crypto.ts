@@ -1,9 +1,4 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
-
-/** 6-digit numeric code, e.g. "042917". Zero-padded so it always sorts the same visual width. */
-export function generateVerificationCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
-}
+import { createHash, randomBytes } from "node:crypto";
 
 /** Opaque URL-safe token for magic links and session identifiers. */
 export function generateToken(): string {

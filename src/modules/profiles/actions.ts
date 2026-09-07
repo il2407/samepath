@@ -10,6 +10,8 @@ import {
   saveProfileStepOne,
   updatePrivacySettings,
 } from "@/modules/profiles/service";
+import { uploadProfilePhoto, deleteProfilePhoto } from "@/modules/profiles/photo";
+import { rateLimit } from "@/shared/rate-limit";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -31,6 +33,7 @@ const stepOneSchema = z.object({
   tagIds: z.array(z.string()),
   languageIds: z.array(z.string()).min(1, "יש לבחור לפחות שפה אחת"),
   positions: z.array(positionSchema),
+  gender: z.enum(["MALE", "FEMALE"]).nullable().optional(),
 });
 
 export async function saveProfileStepOneAction(input: unknown): Promise<ActionState> {
@@ -65,10 +68,8 @@ const privacyStepSchema = z
     employerConfirmed: z.boolean(),
     blockEntireCorporateGroup: z.boolean(),
     additionalBlockedCompanies: z.array(blockedCompanySchema),
-    preMatchDisplayMode: z.enum(["ALIAS", "FIRST_NAME"]),
-    aliasText: z.string().optional(),
-    firstName: z.string().optional(),
     fullName: z.string().optional(),
+    shareCompanyPreMatch: z.boolean(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
     shareLinkedInPostMatch: z.boolean(),
@@ -82,14 +83,6 @@ const privacyStepSchema = z
   .refine((data) => data.employerConfirmed, {
     message: "יש לאשר את המעסיק הנוכחי כדי להמשיך",
     path: ["employerConfirmed"],
-  })
-  .refine((data) => data.preMatchDisplayMode !== "ALIAS" || !!data.aliasText?.trim(), {
-    message: "יש להזין כינוי להצגה",
-    path: ["aliasText"],
-  })
-  .refine((data) => data.preMatchDisplayMode !== "FIRST_NAME" || !!data.firstName?.trim(), {
-    message: "יש להזין שם פרטי",
-    path: ["firstName"],
   })
   .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
     message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
@@ -110,10 +103,8 @@ const privacySettingsSchema = z
   .object({
     blockEntireCorporateGroup: z.boolean(),
     additionalBlockedCompanies: z.array(blockedCompanySchema),
-    preMatchDisplayMode: z.enum(["ALIAS", "FIRST_NAME"]),
-    aliasText: z.string().optional(),
-    firstName: z.string().optional(),
     fullName: z.string().optional(),
+    shareCompanyPreMatch: z.boolean(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
     shareLinkedInPostMatch: z.boolean(),
@@ -123,14 +114,6 @@ const privacySettingsSchema = z
     sharePhonePostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
     resumeRetentionPreference: z.enum(["DELETE_AFTER_CONFIRMATION", "KEEP"]),
-  })
-  .refine((data) => data.preMatchDisplayMode !== "ALIAS" || !!data.aliasText?.trim(), {
-    message: "יש להזין כינוי להצגה",
-    path: ["aliasText"],
-  })
-  .refine((data) => data.preMatchDisplayMode !== "FIRST_NAME" || !!data.firstName?.trim(), {
-    message: "יש להזין שם פרטי",
-    path: ["firstName"],
   })
   .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
     message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
@@ -161,6 +144,9 @@ const connectionReasonEnum = z.enum([
   "CODING_PRACTICE",
   "SYSTEM_DESIGN",
   "INTERVIEW_SIMULATION",
+  "PROJECT_PITCH",
+  "BEHAVIORAL_INTERVIEW",
+  "MENTAL_SUPPORT",
   "OTHER",
 ]);
 
@@ -170,6 +156,7 @@ const preferencesStepSchema = z.object({
   format: z.enum(["ONE_ON_ONE", "GROUP", "BOTH"]),
   cadence: z.enum(["ONE_TIME", "RECURRING", "BOTH"]),
   mode: z.enum(["ONLINE", "IN_PERSON", "BOTH"]),
+  genderPreference: z.enum(["MALE", "FEMALE", "BOTH"]).optional(),
   languageId: z.string().nullable(),
   timezone: z.string().min(1),
   reasons: z.array(connectionReasonEnum),
@@ -184,4 +171,30 @@ export async function completeConnectionPreferencesAction(input: unknown): Promi
   await completeConnectionPreferences(user.id, parsed.data);
   revalidatePath("/app", "layout");
   redirect("/app");
+}
+
+export async function uploadProfilePhotoAction(formData: FormData): Promise<ActionState> {
+  const user = await requireUser();
+
+  const limited = rateLimit(`profile-photo:upload:${user.id}`, 10, 60 * 60 * 1000);
+  if (!limited.allowed) return { ok: false, error: "יותר מדי העלאות. נסו שוב בעוד כשעה" };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "לא נבחרה תמונה" };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const result = await uploadProfilePhoto(user.id, { filename: file.name, mimeType: file.type, buffer });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/app/onboarding/privacy");
+  revalidatePath("/app/settings/privacy");
+  return { ok: true };
+}
+
+export async function deleteProfilePhotoAction(): Promise<ActionState> {
+  const user = await requireUser();
+  await deleteProfilePhoto(user.id);
+  revalidatePath("/app/onboarding/privacy");
+  revalidatePath("/app/settings/privacy");
+  return { ok: true };
 }

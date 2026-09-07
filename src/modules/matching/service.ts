@@ -11,6 +11,7 @@ import {
 } from "@/modules/matching/scoring";
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
 import { toPreMatchDTO, type PreMatchCandidateDTO } from "@/modules/profiles/dto";
+import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 import { createConnectionFromMatch } from "@/modules/connections/service";
 import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
 import type { MatchDecisionType, MatchStatus } from "@/generated/prisma/client";
@@ -125,6 +126,17 @@ export async function generateSuggestionsForUser(userId: string): Promise<number
 export interface SuggestionView {
   id: string;
   candidate: PreMatchCandidateDTO;
+  /**
+   * System-generated, per-suggestion anonymous persona — never derived from
+   * the candidate's real profile data, so it can't leak identity. The same
+   * idea as an anonymous collaborator in a shared Google Sheet: a random
+   * funny name, seeded from the suggestion itself so it stays stable across
+   * refreshes of this same suggestion. The avatar shown alongside it is a
+   * DiceBear image derived from this same codeName, computed client-side.
+   */
+  codeName: string;
+  /** Rounded 0-100 compatibility score shown to the user as "X% match". */
+  matchPercentage: number;
   reasons: SafeReason[];
   status: MatchStatus;
   myDecision: MatchDecisionType | null;
@@ -144,7 +156,7 @@ export async function getActiveSuggestionsForUser(userId: string): Promise<Sugge
   const suggestions = await prisma.matchSuggestion.findMany({
     where: { OR: [{ userAId: userId }, { userBId: userId }], status: { in: VISIBLE_STATUSES } },
     include: { scoreBreakdown: true, decisions: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ scoreBreakdown: { totalScore: "desc" } }, { createdAt: "desc" }],
   });
 
   const result: SuggestionView[] = [];
@@ -174,6 +186,8 @@ export async function getActiveSuggestionsForUser(userId: string): Promise<Sugge
     result.push({
       id: suggestion.id,
       candidate: toPreMatchDTO(raw),
+      codeName: generateFriendlyNickname(suggestion.id),
+      matchPercentage: suggestion.scoreBreakdown ? Math.round(suggestion.scoreBreakdown.totalScore * 100) : 0,
       reasons: suggestion.scoreBreakdown ? generateSafeReasons(suggestion.scoreBreakdown) : [],
       status: suggestion.status,
       myDecision,

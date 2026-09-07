@@ -135,6 +135,9 @@ describe("confirmResumeDraft", () => {
 
     const draft = await prisma.resumeExtractionDraft.findFirst({ where: { userId: user.user.id } });
     expect(draft?.confirmedAt).not.toBeNull();
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.user.id } });
+    expect(profile.cvVerifiedAt).not.toBeNull();
   });
 
   it("keeps the file when keepFile is true", async () => {

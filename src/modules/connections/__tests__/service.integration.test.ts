@@ -7,6 +7,7 @@ import {
   createConnectionFromMatch,
   getConnectionDetail,
   selectConnectionGuide,
+  setMySessionTypes,
   suggestGuideForConnection,
 } from "@/modules/connections/service";
 
@@ -126,5 +127,38 @@ describe("selectConnectionGuide / clearConnectionGuide", () => {
 
     await expect(selectConnectionGuide(outsider.user.id, connection.id, guide.id)).rejects.toThrow();
     await expect(clearConnectionGuide(outsider.user.id, connection.id)).rejects.toThrow();
+  });
+});
+
+describe("setMySessionTypes", () => {
+  it("lets each participant independently record what they want from this session, visible to the other", async () => {
+    const { a, b, connection } = await createTestConnection();
+
+    await setMySessionTypes(a.user.id, connection.id, ["INTERVIEW_SIMULATION", "SYSTEM_DESIGN"]);
+    await setMySessionTypes(b.user.id, connection.id, ["MENTAL_SUPPORT"]);
+
+    const detailForA = await getConnectionDetail(a.user.id, connection.id);
+    const detailForB = await getConnectionDetail(b.user.id, connection.id);
+
+    expect(detailForA?.mySessionTypes).toEqual(["INTERVIEW_SIMULATION", "SYSTEM_DESIGN"]);
+    expect(detailForA?.otherPartySessionTypes).toEqual(["MENTAL_SUPPORT"]);
+    expect(detailForB?.mySessionTypes).toEqual(["MENTAL_SUPPORT"]);
+    expect(detailForB?.otherPartySessionTypes).toEqual(["INTERVIEW_SIMULATION", "SYSTEM_DESIGN"]);
+  });
+
+  it("overwrites a participant's own previous selection rather than appending", async () => {
+    const { a, connection } = await createTestConnection();
+
+    await setMySessionTypes(a.user.id, connection.id, ["INTERVIEW_SIMULATION"]);
+    await setMySessionTypes(a.user.id, connection.id, ["PROJECT_PITCH", "BEHAVIORAL_INTERVIEW"]);
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.mySessionTypes).toEqual(["PROJECT_PITCH", "BEHAVIORAL_INTERVIEW"]);
+  });
+
+  it("refuses a non-participant", async () => {
+    const { connection } = await createTestConnection();
+    const outsider = await createTestUser();
+    await expect(setMySessionTypes(outsider.user.id, connection.id, ["MENTAL_SUPPORT"])).rejects.toThrow();
   });
 });

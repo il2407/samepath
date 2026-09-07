@@ -3,10 +3,42 @@ import { prisma } from "@/shared/db";
 import { checkPrivacy } from "@/modules/privacy/context";
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
 import { toPostMatchDTO, type PostMatchCandidateDTO } from "@/modules/profiles/dto";
+import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 import { getRandomGuideForCategory, type PracticeSessionCategorySlug } from "@/modules/guides/service";
+import { getStorage } from "@/shared/storage";
+import type { ConnectionReason } from "@/generated/prisma/client";
+
+/**
+ * Reads the actual photo bytes back out of storage as a data URL — never
+ * exposed through dto.ts (which stays a pure, DB/storage-free layer): this
+ * is the one place allowed to do it, and only after the caller has already
+ * rechecked privacy and confirmed the connection is real and mutual.
+ */
+async function loadPhotoDataUrl(disclosure: { sharePhotoPostMatch: boolean; photoStorageKey: string | null; photoMimeType: string | null } | null): Promise<string | null> {
+  if (!disclosure?.sharePhotoPostMatch || !disclosure.photoStorageKey) return null;
+  try {
+    const buffer = await getStorage().get(disclosure.photoStorageKey);
+    return `data:${disclosure.photoMimeType ?? "image/jpeg"};base64,${buffer.toString("base64")}`;
+  } catch (error) {
+    console.error("failed to load profile photo for connection", error);
+    return null;
+  }
+}
 
 export async function createConnectionFromMatch(matchSuggestionId: string, userAId: string, userBId: string) {
   return prisma.connection.create({ data: { matchSuggestionId, userAId, userBId } });
+}
+
+/**
+ * The name shown for the other party: their real full name once they've
+ * opted into shareFullNamePostMatch, otherwise the same system-generated
+ * anonymous nickname the match suggestion card showed before the match —
+ * seeded from matchSuggestionId, the stable id both phases share, so the
+ * identity a user saw pre-match stays consistent into the connection instead
+ * of jumping to a new random nickname.
+ */
+function resolveDisplayName(fullName: string | null, matchSuggestionId: string): string {
+  return fullName || generateFriendlyNickname(matchSuggestionId);
 }
 
 export interface ConnectionListItem {
@@ -30,7 +62,7 @@ export async function listConnectionsForUser(userId: string): Promise<Connection
       id: c.id,
       status: c.status,
       createdAt: c.createdAt,
-      otherPartyDisplayName: raw ? toPostMatchDTO(raw).displayName : "משתמש/ת SamePath",
+      otherPartyDisplayName: resolveDisplayName(raw ? toPostMatchDTO(raw).fullName : null, c.matchSuggestionId),
     });
   }
   return items;
@@ -60,9 +92,15 @@ export interface ConnectionDetail {
   status: string;
   createdAt: Date;
   otherParty: PostMatchCandidateDTO;
+  otherPartyDisplayName: string;
+  /** Only set when the other party opted into sharePhotoPostMatch and actually uploaded a photo — otherwise the UI falls back to the initials avatar. */
+  otherPartyPhotoDataUrl: string | null;
   messages: { id: string; senderId: string; body: string; createdAt: Date }[];
   meetingStatuses: { id: string; scheduledAt: Date | null; completedAt: Date | null; note: string | null }[];
   selectedGuide: SelectedGuideDetail | null;
+  /** What each side wants out of this specific connection's session(s) — independent, no agreement required. */
+  mySessionTypes: string[];
+  otherPartySessionTypes: string[];
 }
 
 /** Runs the privacy recheck required before showing a connection, then the post-match DTO. */
@@ -73,6 +111,7 @@ export async function getConnectionDetail(userId: string, connectionId: string):
       messages: { orderBy: { createdAt: "asc" } },
       meetingStatuses: { orderBy: { createdAt: "desc" } },
       selectedGuide: { include: { steps: { orderBy: { order: "asc" } } } },
+      sessionTypeSelections: true,
     },
   });
   if (!connection) return null;
@@ -86,11 +125,15 @@ export async function getConnectionDetail(userId: string, connectionId: string):
   const raw = await loadRawProfileForDto(otherUserId);
   if (!raw) return null;
 
+  const otherParty = toPostMatchDTO(raw);
+
   return {
     id: connection.id,
     status: connection.status,
     createdAt: connection.createdAt,
-    otherParty: toPostMatchDTO(raw),
+    otherParty,
+    otherPartyDisplayName: resolveDisplayName(otherParty.fullName, connection.matchSuggestionId),
+    otherPartyPhotoDataUrl: await loadPhotoDataUrl(raw.disclosurePreference),
     messages: connection.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, createdAt: m.createdAt })),
     meetingStatuses: connection.meetingStatuses.map((m) => ({
       id: m.id,
@@ -116,6 +159,8 @@ export async function getConnectionDetail(userId: string, connectionId: string):
           })),
         }
       : null,
+    mySessionTypes: connection.sessionTypeSelections.find((s) => s.userId === userId)?.sessionTypes ?? [],
+    otherPartySessionTypes: connection.sessionTypeSelections.find((s) => s.userId === otherUserId)?.sessionTypes ?? [],
   };
 }
 
@@ -147,6 +192,17 @@ export async function clearConnectionGuide(userId: string, connectionId: string)
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
   assertParticipant(connection, userId);
   await prisma.connection.update({ where: { id: connectionId }, data: { selectedGuideId: null } });
+}
+
+/** Each participant independently records what they want out of this specific connection's session(s); visible to the other side, no agreement required — same advisory model as selectConnectionGuide. */
+export async function setMySessionTypes(userId: string, connectionId: string, sessionTypes: ConnectionReason[]): Promise<void> {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+  await prisma.connectionSessionTypeSelection.upsert({
+    where: { connectionId_userId: { connectionId, userId } },
+    update: { sessionTypes },
+    create: { connectionId, userId, sessionTypes },
+  });
 }
 
 export async function sendMessage(userId: string, connectionId: string, body: string): Promise<void> {

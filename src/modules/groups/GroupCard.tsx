@@ -57,7 +57,7 @@ export function GroupCard({ group }: { group: GroupSummary }) {
         {group.theme && <Tag label={group.theme} />}
       </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
       <div className="mt-4">
         {localStatus === "NONE" ? (

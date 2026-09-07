@@ -163,13 +163,14 @@ model User {
   privacyAuditsAsSubject   PrivacyDecisionAudit[] @relation("PrivacyAuditSubject")
   privacyAuditsAsCandidate PrivacyDecisionAudit[] @relation("PrivacyAuditCandidate")
 
-  matchSuggestionsAsA   MatchSuggestion[]   @relation("MatchSuggestionUserA")
-  matchSuggestionsAsB   MatchSuggestion[]   @relation("MatchSuggestionUserB")
+  matchSuggestionsAsA   MatchSuggestion[]                @relation("MatchSuggestionUserA")
+  matchSuggestionsAsB   MatchSuggestion[]                @relation("MatchSuggestionUserB")
   matchDecisions        MatchDecision[]
-  connectionsAsA        Connection[]        @relation("ConnectionUserA")
-  connectionsAsB        Connection[]        @relation("ConnectionUserB")
+  connectionsAsA        Connection[]                     @relation("ConnectionUserA")
+  connectionsAsB        Connection[]                     @relation("ConnectionUserB")
   sentMessages          ConnectionMessage[]
   meetingStatusesMarked MeetingStatus[]
+  sessionTypeSelections ConnectionSessionTypeSelection[]
 
   reportsFiled    Report[] @relation("ReportReporter")
   reportsAgainst  Report[] @relation("ReportReportedUser")
@@ -200,11 +201,13 @@ model User {
 
 enum AuthProviderType {
   EMAIL
+  GOOGLE
 }
 
-/// One row per login method a user has configured. Only EMAIL is used in the
-/// MVP (passwordless code/link); the table exists so OAuth providers can be
-/// added later without a data-model change.
+/// One row per login method a user has configured: EMAIL carries a
+/// scrypt passwordHash (providerAccountId = the user's email), GOOGLE
+/// carries no passwordHash (providerAccountId = the Google account's
+/// stable "sub" claim).
 model AuthIdentity {
   id                String           @id @default(cuid())
   userId            String
@@ -236,17 +239,19 @@ model Session {
 }
 
 enum VerificationPurpose {
-  REGISTER
-  LOGIN
+  REGISTER // confirm-your-email link sent right after password registration
+  LOGIN // unused since passwordless login was removed; kept to avoid a Postgres enum-value-removal migration
   EMAIL_CHANGE
+  PASSWORD_RESET
 }
 
+/// Link-only, single-use tokens (no code — nothing in the UI types a code
+/// in anymore). Covers post-signup email confirmation and password reset.
 model EmailVerification {
   id         String              @id @default(cuid())
   userId     String
   user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   purpose    VerificationPurpose
-  codeHash   String
   tokenHash  String              @unique
   expiresAt  DateTime
   consumedAt DateTime?
@@ -275,6 +280,24 @@ enum AvailabilityStatus {
   PAUSED
 }
 
+/// The profile owner's own gender, self-reported — used only to evaluate
+/// GenderPreference compatibility (see ConnectionPreference.genderPreference).
+/// Nullable: existing profiles predate this field, and disclosing it is
+/// optional. A null gender simply cannot satisfy the other side of a match
+/// wanting MALE- or FEMALE-only (see gendersCompatible in the privacy engine).
+enum Gender {
+  MALE
+  FEMALE
+}
+
+/// Who the profile owner is willing to be matched with, by gender.
+/// BOTH (the default) applies no filter at all.
+enum GenderPreference {
+  MALE
+  FEMALE
+  BOTH
+}
+
 enum ResumeRetentionPreference {
   DELETE_AFTER_CONFIRMATION
   KEEP
@@ -297,6 +320,7 @@ model ProfessionalProfile {
   region   Region? @relation(fields: [regionId], references: [id])
 
   shortIntro String? @db.VarChar(400)
+  gender     Gender?
 
   availabilityStatus AvailabilityStatus @default(AVAILABLE)
   status             ProfileStatus      @default(DRAFT)
@@ -306,6 +330,15 @@ model ProfessionalProfile {
   currentCompanyConfirmedAt DateTime?
 
   resumeRetentionPreference ResumeRetentionPreference @default(DELETE_AFTER_CONFIRMATION)
+
+  /// Set the moment the profile owner confirms a resume-extraction draft
+  /// (see ResumeExtractionDraft.confirmedAt / UserConfirmation.RESUME_DRAFT_CONFIRMED)
+  /// — never set for a profile filled in manually. Surfaced pre-match (see
+  /// PreMatchCandidateDTO.cvVerified) as a trust signal: it attests the
+  /// profile's info was cross-checked against an uploaded CV at least once,
+  /// not that the file itself is still stored (it may have been deleted
+  /// right after, per resumeRetentionPreference).
+  cvVerifiedAt DateTime?
 
   version   Int      @default(0)
   createdAt DateTime @default(now())
@@ -422,9 +455,13 @@ enum ConnectionReason {
   ACCOUNTABILITY
   PROFESSIONAL_DISCUSSION
   LEARNING_TOGETHER
+  INTRO_VIDEO_CALL
   CODING_PRACTICE
   SYSTEM_DESIGN
   INTERVIEW_SIMULATION
+  PROJECT_PITCH
+  BEHAVIORAL_INTERVIEW
+  MENTAL_SUPPORT
   OTHER
 }
 
@@ -436,9 +473,10 @@ model ConnectionPreference {
   peerMinExperienceMonths Int @default(0)
   peerMaxExperienceMonths Int @default(240)
 
-  format  ConnectionFormatPreference @default(BOTH)
-  cadence ConnectionCadence          @default(BOTH)
-  mode    ConnectionModePreference   @default(BOTH)
+  format           ConnectionFormatPreference @default(BOTH)
+  cadence          ConnectionCadence          @default(BOTH)
+  mode             ConnectionModePreference   @default(BOTH)
+  genderPreference GenderPreference           @default(BOTH)
 
   languageId String?
   language   Language? @relation(fields: [languageId], references: [id])
@@ -451,27 +489,39 @@ model ConnectionPreference {
   @@map("connection_preferences")
 }
 
-enum DisplayNamePreference {
-  ALIAS
-  FIRST_NAME
-}
-
 /// Controls progressive identity disclosure: pre-match fields are never sent
 /// to the client at all (see DTO layer), post-match fields are only included
 /// once the corresponding boolean is true AND the connection is mutual.
+///
+/// There is deliberately no user-chosen pre-match name here: every candidate
+/// card shows a system-generated funny nickname (see
+/// src/modules/profiles/nickname.ts) plus a DiceBear avatar derived from that
+/// same nickname (see src/shared/ui/Avatar.tsx), the same idea as an
+/// anonymous collaborator in a shared Google Sheet — never something the
+/// profile owner can pick or type, so it can never accidentally leak identity.
 model IdentityDisclosurePreference {
   id        String              @id @default(cuid())
   profileId String              @unique
   profile   ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  preMatchDisplayMode DisplayNamePreference @default(ALIAS)
-  aliasText           String?
-  firstName           String?
   /// Real full name, private, collected once here so shareFullNamePostMatch
   /// has something to reveal — never read by any pre-match code path.
-  fullName            String?
+  fullName             String?
+  /// Opt-in, defaults false: reveals the profile's current employer on the
+  /// pre-match candidate card itself, not just post-match. Every suggestion
+  /// that reaches that card has already passed the privacy hard filter
+  /// (never same company, never a company either side has blocked), so this
+  /// only ever surfaces an employer neither side has ruled out — but it is
+  /// still a real anonymity trade-off the profile owner must choose, never
+  /// something inferred or forced on them.
+  shareCompanyPreMatch Boolean               @default(false)
 
   shareFullNamePostMatch        Boolean @default(false)
+  /// Storage key of the uploaded profile photo (see src/shared/storage.ts),
+  /// null until the user uploads one. Only ever read by post-match code
+  /// paths, and even then only when sharePhotoPostMatch is true.
+  photoStorageKey               String?
+  photoMimeType                 String?
   sharePhotoPostMatch           Boolean @default(false)
   shareLinkedInPostMatch        Boolean @default(false)
   linkedInUrl                   String?
@@ -760,8 +810,10 @@ model MatchSuggestion {
   @@map("match_suggestions")
 }
 
-/// Internal-only score breakdown, used for admin diagnostics and tests.
-/// Never exposed directly to end users (see safe human-readable reasons).
+/// Per-criterion score breakdown, used for admin diagnostics and tests. Only
+/// two derived values ever reach an end user: the rounded totalScore (shown
+/// as a match percentage) and the safe, category-level reasons derived from
+/// it (see generateSafeReasons) — never the individual sub-scores here.
 model MatchScoreBreakdown {
   id                String          @id @default(cuid())
   matchSuggestionId String          @unique
@@ -826,13 +878,31 @@ model Connection {
   selectedGuideId String?
   selectedGuide   SessionGuide? @relation(fields: [selectedGuideId], references: [id])
 
-  messages        ConnectionMessage[]
-  meetingStatuses MeetingStatus[]
-  reports         Report[]
+  messages              ConnectionMessage[]
+  meetingStatuses       MeetingStatus[]
+  reports               Report[]
+  sessionTypeSelections ConnectionSessionTypeSelection[]
 
   @@index([userAId, status])
   @@index([userBId, status])
   @@map("connections")
+}
+
+/// Each participant's independent, non-binding record of what they'd like this
+/// connection's session(s) to actually be (technical mock interview, project
+/// pitch, etc.) — visible to the other side but never requires agreement, same
+/// advisory model as Connection.selectedGuideId.
+model ConnectionSessionTypeSelection {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   Connection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionTypes ConnectionReason[]
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([connectionId, userId])
+  @@map("connection_session_type_selections")
 }
 
 model ConnectionMessage {

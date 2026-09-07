@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { latestVerificationCodeForEmail, uniqueTestEmail } from "./helpers/mail";
+import { uniqueTestEmail } from "./helpers/mail";
 
 /**
  * The single most important path in the app: a brand-new visitor can
@@ -15,11 +15,7 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
 
   await page.goto("/register");
   await page.fill("#email", email);
-  await page.click('button[type="submit"]');
-  await page.waitForSelector("#code");
-
-  const code = await latestVerificationCodeForEmail(email);
-  await page.fill("#code", code);
+  await page.fill("#password", "e2e-test-password");
   await page.click('button[type="submit"]');
 
   await page.waitForURL(/\/app\/onboarding\/profile/);

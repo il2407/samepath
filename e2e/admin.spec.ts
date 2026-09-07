@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { latestVerificationCodeForEmail } from "./helpers/mail";
+
+// Matches SEED_DEV_PASSWORD in prisma/seed/users.ts — every seeded user,
+// including the admin, is created with this password.
+const SEED_DEV_PASSWORD = "samepath-dev-password";
 
 /**
  * Logs in as the seeded admin account (prisma/seed/users.ts —
@@ -10,10 +13,7 @@ import { latestVerificationCodeForEmail } from "./helpers/mail";
 test("admin logs in, sees dashboard metrics, and creates a guide", async ({ page }) => {
   await page.goto("/login");
   await page.fill("#email", "admin@example.com");
-  await page.click('button[type="submit"]');
-  await page.waitForSelector("#code");
-  const code = await latestVerificationCodeForEmail("admin@example.com");
-  await page.fill("#code", code);
+  await page.fill("#password", SEED_DEV_PASSWORD);
   await page.click('button[type="submit"]');
 
   await page.waitForURL(/\/(app|admin)/);

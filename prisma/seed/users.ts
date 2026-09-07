@@ -1,5 +1,9 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { calculateExperienceMonths, deriveSeniorityBandCode } from "@/modules/profiles/experience";
+import { hashPassword } from "@/modules/auth/password";
+
+/** Every seeded user (including the admin) logs in with this password locally — see README "Local development setup". */
+export const SEED_DEV_PASSWORD = "samepath-dev-password";
 
 /**
  * Fictional development users exercising the key privacy/matching scenarios
@@ -12,6 +16,7 @@ import { calculateExperienceMonths, deriveSeniorityBandCode } from "@/modules/pr
  * the Next.js server runtime), which this plain script doesn't run under.
  */
 export async function seedUsers(prisma: PrismaClient) {
+  const devPasswordHash = await hashPassword(SEED_DEV_PASSWORD);
   const field = await prisma.professionalField.findUniqueOrThrow({ where: { code: "software-engineering" } });
   const backendRole = await prisma.targetRole.findUniqueOrThrow({ where: { code: "backend-developer" } });
   const fullstackRole = await prisma.targetRole.findUniqueOrThrow({ where: { code: "fullstack-backend-oriented" } });
@@ -23,6 +28,8 @@ export async function seedUsers(prisma: PrismaClient) {
   const typescript = await prisma.tag.findFirstOrThrow({ where: { kind: "SKILL", slug: "typescript" } });
   const postgres = await prisma.tag.findFirstOrThrow({ where: { kind: "SKILL", slug: "postgresql" } });
   const fintech = await prisma.tag.findFirstOrThrow({ where: { kind: "DOMAIN", slug: "fintech" } });
+
+  const standardPass = await prisma.productConfiguration.findUniqueOrThrow({ where: { key: "standard-pass" } });
 
   const northwindParent = await prisma.company.findUniqueOrThrow({ where: { id: "seed-co-northwind" } });
   const northwindIsrael = await prisma.company.findUniqueOrThrow({ where: { id: "seed-co-northwind-il" } });
@@ -48,7 +55,6 @@ export async function seedUsers(prisma: PrismaClient) {
   interface SeedUserInput {
     id: string;
     email: string;
-    aliasText: string;
     shortIntro: string;
     companyId: string;
     startedMonthsAgo: number;
@@ -58,6 +64,9 @@ export async function seedUsers(prisma: PrismaClient) {
     targetRoleIds?: string[];
     languageIds?: string[];
     availability?: { dayOfWeek: number; startMinute: number; endMinute: number }[];
+    shareCompanyPreMatch?: boolean;
+    gender?: "MALE" | "FEMALE";
+    genderPreference?: "MALE" | "FEMALE" | "BOTH";
   }
 
   async function seedUser(input: SeedUserInput) {
@@ -71,6 +80,12 @@ export async function seedUsers(prisma: PrismaClient) {
       where: { id: input.id },
       update: {},
       create: { id: input.id, email: input.email, emailVerifiedAt: new Date(), status: "ACTIVE" },
+    });
+
+    await prisma.authIdentity.upsert({
+      where: { provider_providerAccountId: { provider: "EMAIL", providerAccountId: input.email } },
+      update: { passwordHash: devPasswordHash },
+      create: { userId: user.id, provider: "EMAIL", providerAccountId: input.email, passwordHash: devPasswordHash },
     });
 
     const profile = await prisma.professionalProfile.upsert({
@@ -87,14 +102,26 @@ export async function seedUsers(prisma: PrismaClient) {
         currentCompanyId: input.companyId,
         currentCompanyConfirmedAt: new Date(),
         status: "ACTIVE",
+        gender: input.gender,
         targetRoles: { create: targetRoleIds.map((targetRoleId) => ({ targetRoleId })) },
         tags: { create: [{ tagId: typescript.id }, { tagId: postgres.id }, { tagId: fintech.id }] },
         languages: { create: languageIds.map((languageId) => ({ languageId })) },
         privacyPreference: { create: { blockEntireCorporateGroup: input.blockEntireCorporateGroup ?? true } },
         connectionPreference: {
-          create: { format: "BOTH", cadence: "BOTH", mode: "ONLINE", timezone: "Asia/Jerusalem", reasons: ["SHARE_JOB_SEARCH", "ACCOUNTABILITY"] },
+          create: {
+            format: "BOTH",
+            cadence: "BOTH",
+            mode: "ONLINE",
+            timezone: "Asia/Jerusalem",
+            reasons: ["SHARE_JOB_SEARCH", "ACCOUNTABILITY"],
+            genderPreference: input.genderPreference ?? "BOTH",
+          },
         },
-        disclosurePreference: { create: { preMatchDisplayMode: "ALIAS", aliasText: input.aliasText } },
+        disclosurePreference: {
+          create: {
+            shareCompanyPreMatch: input.shareCompanyPreMatch ?? false,
+          },
+        },
         availabilitySlots: { create: availability },
         employmentPositions: {
           create: [
@@ -127,16 +154,16 @@ export async function seedUsers(prisma: PrismaClient) {
   // Same-company pair: must never match each other.
   const dana = await seedUser({
     id: "seed-user-dana",
+    gender: "FEMALE",
     email: "dana@example.com",
-    aliasText: "ד.",
     shortIntro: "מפתחת Backend עם ניסיון במערכות תשלומים, מחפשת לשוחח על תהליך החיפוש.",
     companyId: northwindParent.id,
     startedMonthsAgo: 30,
   });
   const yossi = await seedUser({
     id: "seed-user-yossi",
+    gender: "MALE",
     email: "yossi@example.com",
-    aliasText: "י.",
     shortIntro: "מפתח Backend, מתעניין בדיונים מקצועיים ותרגול system design.",
     companyId: northwindParent.id,
     startedMonthsAgo: 40,
@@ -145,8 +172,8 @@ export async function seedUsers(prisma: PrismaClient) {
   // Corporate-group pair: subsidiary of dana/yossi's employer — must not match them either.
   const noa = await seedUser({
     id: "seed-user-noa",
+    gender: "FEMALE",
     email: "noa@example.com",
-    aliasText: "נ.",
     shortIntro: "מפתחת Backend, עברתי לאחרונה לתפקיד חדש ומחפשת ליווי בתהליך ההשתלבות.",
     companyId: northwindIsrael.id,
     startedMonthsAgo: 6,
@@ -155,8 +182,8 @@ export async function seedUsers(prisma: PrismaClient) {
   // A user who blocks a former employer.
   const avi = await seedUser({
     id: "seed-user-avi",
+    gender: "MALE",
     email: "avi@example.com",
-    aliasText: "א.",
     shortIntro: "מפתח Backend בכיר, מחפש קבוצת דיון קבועה.",
     companyId: initech.id,
     startedMonthsAgo: 84,
@@ -164,8 +191,8 @@ export async function seedUsers(prisma: PrismaClient) {
   });
   const maya = await seedUser({
     id: "seed-user-maya",
+    gender: "FEMALE",
     email: "maya@example.com",
-    aliasText: "מ.",
     shortIntro: "מפתחת Backend, מתעניינת בשיתוף חוויות מתהליכי ריאיון.",
     companyId: globex.id, // the company avi blocked — must never match avi
     startedMonthsAgo: 20,
@@ -174,8 +201,8 @@ export async function seedUsers(prisma: PrismaClient) {
   // Compatible Backend users with clearly different experience levels.
   const ronit = await seedUser({
     id: "seed-user-ronit",
+    gender: "FEMALE",
     email: "ronit@example.com",
-    aliasText: "ר.",
     shortIntro: "מפתחת Backend בתחילת הדרך, מחפשת ליווי וללמוד יחד.",
     companyId: umbrella.id,
     startedMonthsAgo: 10, // junior
@@ -185,8 +212,8 @@ export async function seedUsers(prisma: PrismaClient) {
   });
   const eitan = await seedUser({
     id: "seed-user-eitan",
+    gender: "MALE",
     email: "eitan@example.com",
-    aliasText: "עי.",
     shortIntro: "מפתח Backend ותיק, שמח לשתף ניסיון וללוות מפתחים בתחילת הדרך.",
     companyId: acme.id,
     startedMonthsAgo: 130, // staff/principal
@@ -196,8 +223,8 @@ export async function seedUsers(prisma: PrismaClient) {
   // Overlapping vs non-overlapping availability.
   const tal = await seedUser({
     id: "seed-user-tal",
+    gender: "MALE",
     email: "tal@example.com",
-    aliasText: "ט.",
     shortIntro: "מפתח Backend, זמין לשיחות בבקרים.",
     companyId: initech.id,
     startedMonthsAgo: 45,
@@ -205,13 +232,114 @@ export async function seedUsers(prisma: PrismaClient) {
   });
   const shira = await seedUser({
     id: "seed-user-shira",
+    gender: "FEMALE",
     email: "shira@example.com",
-    aliasText: "שי.",
     shortIntro: "מפתחת Backend, זמינה בעיקר בערבים.",
     companyId: umbrella.id,
     startedMonthsAgo: 50,
     availability: [{ dayOfWeek: 4, startMinute: 1080, endMinute: 1260 }],
   });
+
+  // A clean, unblocked pair who both opted into shareCompanyPreMatch — the
+  // fastest way to see the pre-match employer reveal actually render, with
+  // no settings toggling needed first. Different companies, no corporate
+  // group between them, no blocks either direction.
+  const omer = await seedUser({
+    id: "seed-user-omer",
+    gender: "MALE",
+    email: "omer@example.com",
+    shortIntro: "מפתח Backend, שמח לחשוף את המעסיק כבר לפני אישור הדדי.",
+    companyId: umbrella.id,
+    startedMonthsAgo: 60,
+    shareCompanyPreMatch: true,
+  });
+  const liat = await seedUser({
+    id: "seed-user-liat",
+    gender: "FEMALE",
+    email: "liat@example.com",
+    shortIntro: "מפתחת Backend, גם אני חושפת את המעסיק כבר לפני אישור הדדי.",
+    companyId: acme.id,
+    startedMonthsAgo: 55,
+    shareCompanyPreMatch: true,
+  });
+
+  // A pending mutual-interest scenario: eitan has already marked "interested"
+  // in avi (a compatible, unblocked pair — different companies, no corporate
+  // group, no blocks either direction). Log in as avi (avi@example.com /
+  // SEED_DEV_PASSWORD) and open "הצעות התאמה" (/app/matches): eitan's
+  // suggestion is already there, and clicking "רוצה להתחבר" completes the
+  // mutual match immediately, since the other side already said yes. Both
+  // are also granted an active access pass so the resulting match opens a
+  // real, active connection instead of stalling at the paywall.
+  async function grantActiveAccessPass(userId: string) {
+    const existing = await prisma.accessPass.findFirst({ where: { userId, status: "ACTIVE" } });
+    if (existing) return;
+    const activatedAt = new Date();
+    const accessPass = await prisma.accessPass.create({
+      data: {
+        userId,
+        productConfigId: standardPass.id,
+        status: "ACTIVE",
+        activationEventType: "MANUAL",
+        durationDays: standardPass.accessDurationDays,
+        activatedAt,
+        expiresAt: new Date(activatedAt.getTime() + standardPass.accessDurationDays * 24 * 60 * 60 * 1000),
+      },
+    });
+    await prisma.accessPassEvent.create({ data: { accessPassId: accessPass.id, type: "ACTIVATED" } });
+  }
+
+  // Reuse a suggestion between avi and eitan if one already exists (e.g. from
+  // clicking "חיפוש התאמות חדשות" during manual testing) rather than creating
+  // a second, duplicate card for the same pair.
+  const existingAviEitanSuggestion = await prisma.matchSuggestion.findFirst({
+    where: {
+      status: { in: ["PROPOSED", "INTERESTED_BY_A", "INTERESTED_BY_B"] },
+      OR: [
+        { userAId: avi.user.id, userBId: eitan.user.id },
+        { userAId: eitan.user.id, userBId: avi.user.id },
+      ],
+    },
+  });
+
+  const aviEitanMatchId = existingAviEitanSuggestion?.id ?? "seed-match-avi-eitan";
+  if (!existingAviEitanSuggestion) {
+    await prisma.matchSuggestion.upsert({
+      where: { id: aviEitanMatchId },
+      update: {},
+      create: {
+        id: aviEitanMatchId,
+        userAId: avi.user.id,
+        userBId: eitan.user.id,
+        profileAId: avi.profile.id,
+        profileBId: eitan.profile.id,
+        status: "INTERESTED_BY_B",
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      },
+    });
+    await prisma.matchScoreBreakdown.upsert({
+      where: { matchSuggestionId: aviEitanMatchId },
+      update: {},
+      create: {
+        matchSuggestionId: aviEitanMatchId,
+        targetRoleScore: 0.9,
+        fieldScore: 1,
+        experienceScore: 0.6,
+        availabilityScore: 0.7,
+        skillsScore: 0.8,
+        languageScore: 1,
+        totalScore: 0.83,
+        weightsVersion: "default-v1",
+      },
+    });
+  }
+  await prisma.matchDecision.upsert({
+    where: { matchSuggestionId_userId: { matchSuggestionId: aviEitanMatchId, userId: eitan.user.id } },
+    update: { decision: "INTERESTED" },
+    create: { matchSuggestionId: aviEitanMatchId, userId: eitan.user.id, decision: "INTERESTED" },
+  });
+  await grantActiveAccessPass(avi.user.id);
+  await grantActiveAccessPass(eitan.user.id);
 
   // A small eligible group (avi, ronit, eitan — none of them conflict).
   const eligibleGroup = await prisma.group.upsert({
@@ -271,7 +399,7 @@ export async function seedUsers(prisma: PrismaClient) {
 
   // Admin/moderator account for the internal admin area — no professional
   // profile, since admins access /admin rather than the member-facing /app.
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { id: "seed-user-admin" },
     update: {},
     create: {
@@ -281,6 +409,12 @@ export async function seedUsers(prisma: PrismaClient) {
       status: "ACTIVE",
       role: "ADMIN",
     },
+  });
+
+  await prisma.authIdentity.upsert({
+    where: { provider_providerAccountId: { provider: "EMAIL", providerAccountId: admin.email } },
+    update: { passwordHash: devPasswordHash },
+    create: { userId: admin.id, provider: "EMAIL", providerAccountId: admin.email, passwordHash: devPasswordHash },
   });
 
   return { dana, yossi, noa, avi, maya, ronit, eitan, tal, shira, eligibleGroup, conflictedGroup };

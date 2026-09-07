@@ -26,6 +26,10 @@ const envSchema = z.object({
 
   PAYMENT_PROVIDER: z.enum(["fake"]).default("fake"),
 
+  GOOGLE_OAUTH_ADAPTER: z.enum(["fake", "google"]).default("google"),
+  GOOGLE_CLIENT_ID: z.string().optional().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
+
   RESUME_PARSER: z.enum(["deterministic", "ai"]).default("deterministic"),
   RESUME_AI_API_KEY: z.string().optional().default(""),
 

@@ -3,22 +3,6 @@ import { PrismaClient } from "@/generated/prisma/client";
 /** Optional session guides (spec §9) — never required, never tracked for completion. */
 export async function seedGuides(prisma: PrismaClient) {
   await upsertGuide(prisma, {
-    id: "seed-guide-first-meeting",
-    title: "היכרות ראשונה",
-    purpose: "מסגרת קלה לפתיחת השיחה הראשונה, בלי מבוכה של \"אז... מאיפה מתחילים?\"",
-    suggestedDurationMinutes: 30,
-    format: "ONE_ON_ONE",
-    category: "היכרות",
-    order: 0,
-    steps: [
-      { title: "פתיחה", prompt: "שתפו קצר מי אתם מקצועית ומה מביא אתכם ל-SamePath, בלי לחשוף פרטים מזהים.", kind: "AGENDA" },
-      { title: "המצב הנוכחי", prompt: "מה שלב תהליך החיפוש שלכם היום? מה הכי מאתגר בו כרגע?", kind: "PROMPT" },
-      { title: "מה תרצו מהחיבור הזה", prompt: "ליווי קבוע? שיחה חד-פעמית? תרגול משותף?", kind: "PROMPT" },
-      { title: "המשך אפשרי", prompt: "אם היה נעים — האם יש טעם לקבוע עוד שיחה?", kind: "FOLLOWUP" },
-    ],
-  });
-
-  await upsertGuide(prisma, {
     id: "seed-guide-accountability",
     title: "צ׳ק-אין שבועי",
     purpose: "מפגש קצר לשמירה על מומנטום בתהליך החיפוש, בסגנון ליווי הדדי.",
@@ -74,20 +58,62 @@ export async function seedGuides(prisma: PrismaClient) {
 }
 
 /**
- * Structured, timed practice-session walkthroughs (project/architecture
- * presentation, coding, system design) — suggested at the point a
- * connection is set up (src/modules/connections/ConnectionRoom.tsx) so
- * both people know what shape the session will take before it starts,
+ * Structured, timed practice-session walkthroughs (intro video call,
+ * project/architecture presentation, coding, system design) — suggested at
+ * the point a connection is set up (src/modules/connections/ConnectionRoom.tsx)
+ * so both people know what shape the session will take before it starts,
  * rather than leaving it to whoever talks first. Still fully optional,
  * same as every other guide: nothing here is tracked for completion or
  * required to use a connection.
  *
  * These are seeded starter content, not a curated bank — see README for
- * how to add more via /admin/guides (category "coding" / "system-design"
- * / "project-presentation" — the suggestion logic on a connection picks a
- * random PUBLISHED guide from whichever category the pair chooses).
+ * how to add more via /admin/guides (category "intro" / "coding" /
+ * "system-design" / "project-presentation" — the suggestion logic on a
+ * connection picks a random PUBLISHED guide from whichever category the
+ * pair chooses).
  */
 async function seedPracticeSessionGuides(prisma: PrismaClient) {
+  await upsertGuide(prisma, {
+    id: "seed-guide-first-meeting",
+    title: "היכרות ראשונה",
+    purpose:
+      "מסגרת קלה למפגש היכרות קצר בווידאו, כדי להכיר לפני שממשיכים לסוג מפגש ממוקד יותר — בלי מבוכה של \"אז... מאיפה מתחילים?\"",
+    suggestedDurationMinutes: 30,
+    format: "ONE_ON_ONE",
+    category: "intro",
+    order: 5,
+    steps: [
+      {
+        title: "פתיחה",
+        prompt: "שתפו קצר מי אתם מקצועית ומה מביא אתכם ל-SamePath, בלי לחשוף פרטים מזהים.",
+        kind: "AGENDA",
+        role: "BOTH",
+        durationMinutes: 5,
+      },
+      {
+        title: "המצב הנוכחי",
+        prompt: "מה שלב תהליך החיפוש שלכם היום? מה הכי מאתגר בו כרגע?",
+        kind: "PROMPT",
+        role: "BOTH",
+        durationMinutes: 10,
+      },
+      {
+        title: "מה תרצו מהחיבור הזה",
+        prompt: "ליווי קבוע? שיחה חד-פעמית? תרגול משותף — קוד, עיצוב מערכות, הצגת פרויקט?",
+        kind: "PROMPT",
+        role: "BOTH",
+        durationMinutes: 10,
+      },
+      {
+        title: "המשך אפשרי",
+        prompt: "אם היה נעים — האם יש טעם לקבוע מפגש ממוקד יותר בפעם הבאה?",
+        kind: "FOLLOWUP",
+        role: "BOTH",
+        durationMinutes: 5,
+      },
+    ],
+  });
+
   await upsertGuide(prisma, {
     id: "seed-guide-practice-project-presentation",
     title: "הצגת פרויקט וארכיטקטורה",

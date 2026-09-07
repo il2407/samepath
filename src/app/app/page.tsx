@@ -56,7 +56,7 @@ export default async function AppHomePage() {
           קבוצות זמינות
         </Link>
         <Link href="/app/guides" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
-          מדריכים אופציונליים
+          מערכי מפגש
         </Link>
         <Link href="/app/settings/privacy" className="rounded-full border border-border bg-white px-4 py-2 hover:border-primary">
           הגדרות פרטיות

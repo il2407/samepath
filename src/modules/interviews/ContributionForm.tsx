@@ -203,7 +203,7 @@ export function ContributionForm({
           </p>
         </div>
 
-        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
         <div className="flex gap-3">
           <Button variant="secondary" onClick={() => setStep("edit")} disabled={pending} className="px-4 py-2 text-sm">
@@ -330,7 +330,7 @@ export function ContributionForm({
                   <input type="checkbox" checked={q.isFollowUp} onChange={(e) => updateQuestion(stage.key, q.key, { isFollowUp: e.target.checked })} />
                   שאלת המשך
                 </label>
-                <button type="button" onClick={() => removeQuestion(stage.key, q.key)} className="pt-2 text-xs text-muted hover:text-red-600">
+                <button type="button" onClick={() => removeQuestion(stage.key, q.key)} className="pt-2 text-xs text-muted hover:text-danger">
                   הסרה
                 </button>
               </div>
@@ -340,7 +340,7 @@ export function ContributionForm({
             </button>
 
             <div>
-              <button type="button" onClick={() => removeStage(stage.key)} className="text-sm text-muted hover:text-red-600">
+              <button type="button" onClick={() => removeStage(stage.key)} className="text-sm text-muted hover:text-danger">
                 הסרת שלב
               </button>
             </div>
@@ -389,7 +389,7 @@ export function ContributionForm({
         </div>
       </section>
 
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "שומר…" : "המשך לאישור ושליחה"}

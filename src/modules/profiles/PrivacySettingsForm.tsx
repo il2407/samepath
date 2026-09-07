@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { CompanyPicker, type CompanySelection } from "@/modules/companies/CompanyPicker";
 import { Button } from "@/shared/ui/Button";
 import { updatePrivacySettingsAction } from "@/modules/profiles/actions";
+import { ProfilePhotoUploadCard } from "@/modules/profiles/ProfilePhotoUploadCard";
 
 type BlockReason = "FORMER_EMPLOYER" | "INTERVIEWING" | "CLIENT_OR_VENDOR" | "OTHER";
 
@@ -25,11 +26,11 @@ interface BlockedCompanyRow {
 export interface PrivacySettingsInitial {
   blockEntireCorporateGroup: boolean;
   blockedCompanies: { company: CompanySelection; reason: BlockReason }[];
-  preMatchDisplayMode: "ALIAS" | "FIRST_NAME";
-  aliasText: string;
-  firstName: string;
   fullName: string;
+  shareCompanyPreMatch: boolean;
   shareFullNamePostMatch: boolean;
+  photoDataUrl: string | null;
+  sharePhotoPostMatch: boolean;
   shareLinkedInPostMatch: boolean;
   linkedInUrl: string;
   sharePreciseLocationPostMatch: boolean;
@@ -45,11 +46,10 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
   const [blocks, setBlocks] = useState<BlockedCompanyRow[]>(
     initial.blockedCompanies.map((b) => ({ key: crypto.randomUUID(), company: b.company, reason: b.reason, note: "" })),
   );
-  const [displayMode, setDisplayMode] = useState(initial.preMatchDisplayMode);
-  const [aliasText, setAliasText] = useState(initial.aliasText);
-  const [firstName, setFirstName] = useState(initial.firstName);
   const [fullName, setFullName] = useState(initial.fullName);
+  const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(initial.shareCompanyPreMatch);
   const [shareFullName, setShareFullName] = useState(initial.shareFullNamePostMatch);
+  const [sharePhoto, setSharePhoto] = useState(initial.sharePhotoPostMatch);
   const [shareLinkedIn, setShareLinkedIn] = useState(initial.shareLinkedInPostMatch);
   const [linkedInUrl, setLinkedInUrl] = useState(initial.linkedInUrl);
   const [shareLocation, setShareLocation] = useState(initial.sharePreciseLocationPostMatch);
@@ -76,8 +76,6 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
     e.preventDefault();
     setError(null);
     setNotice(null);
-    if (displayMode === "ALIAS" && !aliasText.trim()) return setError("יש להזין כינוי להצגה");
-    if (displayMode === "FIRST_NAME" && !firstName.trim()) return setError("יש להזין שם פרטי");
     if (shareFullName && !fullName.trim()) return setError("יש להזין שם מלא כדי לחשוף אותו");
     for (const b of blocks) {
       if (!b.company) return setError("יש לבחור חברה עבור כל שורת חסימה, או להסיר שורה ריקה");
@@ -87,12 +85,10 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
       const result = await updatePrivacySettingsAction({
         blockEntireCorporateGroup: blockGroup,
         additionalBlockedCompanies: blocks.map((b) => ({ companyId: b.company!.id, reason: b.reason })),
-        preMatchDisplayMode: displayMode,
-        aliasText: displayMode === "ALIAS" ? aliasText.trim() : undefined,
-        firstName: displayMode === "FIRST_NAME" ? firstName.trim() : undefined,
         fullName: fullName.trim() || undefined,
+        shareCompanyPreMatch,
         shareFullNamePostMatch: shareFullName,
-        sharePhotoPostMatch: false,
+        sharePhotoPostMatch: sharePhoto,
         shareLinkedInPostMatch: shareLinkedIn,
         linkedInUrl: shareLinkedIn ? linkedInUrl.trim() || undefined : undefined,
         sharePreciseLocationPostMatch: shareLocation,
@@ -136,7 +132,7 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => removeBlock(b.key)} className="text-sm text-muted hover:text-red-600">
+            <button type="button" onClick={() => removeBlock(b.key)} className="text-sm text-muted hover:text-danger">
               הסרה
             </button>
           </div>
@@ -148,33 +144,31 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">איך תוצגו לפני אישור הדדי</h2>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={displayMode === "ALIAS"} onChange={() => setDisplayMode("ALIAS")} />
-            כינוי
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={displayMode === "FIRST_NAME"} onChange={() => setDisplayMode("FIRST_NAME")} />
-            שם פרטי
-          </label>
+        <p className="text-sm text-muted">
+          שם מלא ותמונה לעולם לא מוצגים לפני אישור הדדי. במקומם, המערכת מציגה אתכם עם כינוי ואייקון
+          אקראיים — בדיוק כמו משתמש/ת אנונימי/ת בגיליון גוגל משותף. אי אפשר לבחור אותם, וזה מכוון: כך
+          הזהות שלכם לא נחשפת בטעות. הכינוי משתנה עם כל הצעת התאמה חדשה.
+        </p>
+        <div className="rounded-xl border border-border bg-paper p-4">
+          <ToggleRow label="להציג גם את שם המעסיק לפני אישור הדדי" checked={shareCompanyPreMatch} onChange={setShareCompanyPreMatch} />
+          <p className="mt-1.5 text-xs text-muted">
+            כברירת מחדל שם המעסיק מוצג רק לאחר אישור הדדי. אם תסמנו זאת, הוא יופיע כבר בכרטיס ההצעה —
+            שימושי כדי לסנן מראש חברה שפתאום הבנתם שאתם לא רוצים בה, גם אם לא חסמתם אותה מראש. מכיוון
+            שההתאמה כבר עברה את בדיקת הפרטיות, זה לעולם לא יחשוף חברה שכבר נפסלה — אבל עדיין חושף יותר
+            מידע לפני שהצד השני הסכים לכך.
+          </p>
         </div>
-        {displayMode === "ALIAS" ? (
-          <input
-            value={aliasText}
-            onChange={(e) => setAliasText(e.target.value)}
-            className="w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-          />
-        ) : (
-          <input
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            className="w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-          />
-        )}
       </section>
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">מה לחשוף אחרי אישור הדדי</h2>
+        <ProfilePhotoUploadCard
+          currentPhotoDataUrl={initial.photoDataUrl}
+          avatarFallbackSeed={fullName || "SamePath"}
+          onUploaded={() => setSharePhoto(true)}
+          onRemoved={() => setSharePhoto(false)}
+        />
+        {initial.photoDataUrl && <ToggleRow label="להציג את התמונה לאחר אישור הדדי" checked={sharePhoto} onChange={setSharePhoto} />}
         <div>
           <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
           {shareFullName && (
@@ -231,7 +225,7 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
       </section>
 
       {notice && <p className="rounded-xl bg-mint px-4 py-3 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "שומר…" : "שמירת שינויים"}

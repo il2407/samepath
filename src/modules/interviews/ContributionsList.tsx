@@ -52,7 +52,7 @@ export function ContributionsList({ contributions }: { contributions: Contributi
               type="button"
               onClick={() => handleWithdraw(c.id)}
               disabled={pending}
-              className="mt-3 text-sm text-muted hover:text-red-600"
+              className="mt-3 text-sm text-muted hover:text-danger"
             >
               משיכת התרומה
             </button>

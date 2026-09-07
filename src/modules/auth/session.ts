@@ -9,6 +9,7 @@ import type { User } from "@/generated/prisma/client";
 
 export const SESSION_COOKIE = "samepath_session";
 export const PENDING_VERIFICATION_COOKIE = "samepath_pending_verification";
+export const OAUTH_STATE_COOKIE = "samepath_oauth_state";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // refresh once <7 days remain
@@ -129,4 +130,20 @@ export async function getPendingVerificationId(): Promise<string | null> {
 export async function clearPendingVerificationCookie(): Promise<void> {
   const jar = await cookies();
   jar.delete(PENDING_VERIFICATION_COOKIE);
+}
+
+/** CSRF protection for the Google OAuth flow: an opaque value round-tripped through Google via `state` and compared literally against this cookie on callback. */
+export async function setOAuthStateCookie(state: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(OAUTH_STATE_COOKIE, state, cookieOptions(15 * 60));
+}
+
+export async function getOAuthStateCookie(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(OAUTH_STATE_COOKIE)?.value ?? null;
+}
+
+export async function clearOAuthStateCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(OAUTH_STATE_COOKIE);
 }

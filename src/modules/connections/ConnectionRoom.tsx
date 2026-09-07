@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/shared/ui/Button";
+import { Avatar } from "@/shared/ui/Avatar";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 import {
   blockConnectionAction,
   clearConnectionGuideAction,
@@ -11,11 +13,87 @@ import {
   pickGuideForConnectionAction,
   reportConnectionAction,
   sendMessageAction,
+  setMySessionTypesAction,
 } from "@/modules/connections/actions";
-import { reportCategoryLabels } from "@/modules/profiles/labels";
+import { connectionReasonLabels, reportCategoryLabels, sessionTypeReasons } from "@/modules/profiles/labels";
 import type { ConnectionDetail } from "@/modules/connections/service";
 
 const roleLabels: Record<string, string> = { PRESENTER: "מציג/ה", LISTENER: "מקשיב/ה", BOTH: "שניכם" };
+
+/** The ConnectionReason that maps to the "intro" practice-session guide category (see prisma/seed/guides.ts) — picking it as a session type auto-suggests that guide, so the pair doesn't need a second click to see the intro structure. */
+const INTRO_SESSION_TYPE = "INTRO_VIDEO_CALL";
+const INTRO_GUIDE_CATEGORY = "intro";
+
+function SessionTypeSelector({
+  connectionId,
+  mySessionTypes,
+  otherPartySessionTypes,
+  hasSelectedGuide,
+}: {
+  connectionId: string;
+  mySessionTypes: string[];
+  otherPartySessionTypes: string[];
+  hasSelectedGuide: boolean;
+}) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<string[]>(mySessionTypes);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(value: string) {
+    const wasAdded = !selected.includes(value);
+    const next = wasAdded ? [...selected, value] : selected.filter((v) => v !== value);
+    setSelected(next);
+    setError(null);
+    startTransition(async () => {
+      const result = await setMySessionTypesAction({ connectionId, sessionTypes: next });
+      if (!result.ok) {
+        setError(result.error ?? "משהו השתבש");
+        return;
+      }
+      if (wasAdded && value === INTRO_SESSION_TYPE && !hasSelectedGuide) {
+        await pickGuideForConnectionAction({ connectionId, category: INTRO_GUIDE_CATEGORY });
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6">
+      <h2 className="font-semibold text-ink">איזה סוג מפגש תרצו הפעם?</h2>
+      <p className="mt-1 text-sm text-muted">
+        כל צד מסמן בנפרד — כדי ששניכם תדעו מראש למה לצפות. אין צורך בהסכמה הדדית.
+      </p>
+
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {sessionTypeReasons.map((value) => (
+          <button
+            key={value}
+            type="button"
+            disabled={pending}
+            onClick={() => toggle(value)}
+            aria-pressed={selected.includes(value)}
+            className={
+              selected.includes(value)
+                ? "rounded-full border border-primary bg-mint px-4 py-2 text-sm text-primary-dark disabled:opacity-50"
+                : "rounded-full border border-border bg-white px-4 py-2 text-sm text-ink hover:border-primary disabled:opacity-50"
+            }
+          >
+            {connectionReasonLabels[value]}
+          </button>
+        ))}
+      </div>
+
+      {otherPartySessionTypes.length > 0 && (
+        <p className="mt-4 text-sm text-muted">
+          הצד השני מעוניין/ת ב: {otherPartySessionTypes.map((r) => connectionReasonLabels[r] ?? r).join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function SuggestedSession({
   connectionId,
@@ -53,7 +131,7 @@ function SuggestedSession({
         הצעה אופציונלית לתכנון הזמן ביחד, כדי ששניכם תדעו מראש למה לצפות — לא חובה להשתמש בה.
       </p>
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {!selectedGuide ? (
         <div className="mt-4 flex flex-wrap gap-2">
@@ -106,7 +184,7 @@ function SuggestedSession({
                 הצעה אחרת מאותה קטגוריה
               </button>
             )}
-            <button type="button" disabled={pending} onClick={clear} className="text-muted hover:text-red-600">
+            <button type="button" disabled={pending} onClick={clear} className="text-muted hover:text-danger">
               הסרת המבנה המוצע
             </button>
           </div>
@@ -182,12 +260,16 @@ export function ConnectionRoom({
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-white p-6">
         <div className="flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-full bg-mint text-lg font-semibold text-primary-dark">
-            {connection.otherParty.displayName.slice(0, 1)}
-          </div>
+          {connection.otherPartyPhotoDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- data URL loaded server-side, not an optimizable remote asset
+            <img src={connection.otherPartyPhotoDataUrl} alt="" className="size-11 shrink-0 rounded-full object-cover" />
+          ) : (
+            <Avatar seed={connection.otherPartyDisplayName} />
+          )}
           <div>
-            <p className="font-semibold text-ink">
-              {connection.otherParty.fullName || connection.otherParty.displayName}
+            <p className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+              {connection.otherPartyDisplayName}
+              {connection.otherParty.cvVerified && <CvVerifiedBadge />}
             </p>
             <p className="text-sm text-muted">
               {[connection.otherParty.professionalField, connection.otherParty.seniorityBand].filter(Boolean).join(" · ")}
@@ -204,6 +286,15 @@ export function ConnectionRoom({
           )}
         </div>
       </div>
+
+      {isActive && (
+        <SessionTypeSelector
+          connectionId={connection.id}
+          mySessionTypes={connection.mySessionTypes}
+          otherPartySessionTypes={connection.otherPartySessionTypes}
+          hasSelectedGuide={connection.selectedGuide !== null}
+        />
+      )}
 
       {isActive && <SuggestedSession connectionId={connection.id} selectedGuide={connection.selectedGuide} categories={categories} />}
 
@@ -240,7 +331,7 @@ export function ConnectionRoom({
             </Button>
           </form>
         )}
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       </div>
 
       {isActive && (
@@ -274,7 +365,7 @@ export function ConnectionRoom({
               type="button"
               onClick={() => setShowReport((v) => !v)}
               disabled={pending}
-              className="px-3 py-2 text-sm text-muted hover:text-red-600"
+              className="px-3 py-2 text-sm text-muted hover:text-danger"
             >
               דיווח
             </button>

@@ -11,15 +11,15 @@ vi.mock("@/modules/notifications/mailer", () => ({
   }),
 }));
 
-const { requestVerificationCode, verifyCode, verifyToken, getPostAuthRedirectPath } = await import(
-  "@/modules/auth/service"
-);
-
-function extractCode(text: string): string {
-  const match = text.match(/\n(\d{6})\n/);
-  if (!match) throw new Error(`no code found in email body:\n${text}`);
-  return match[1];
-}
+const {
+  registerWithPassword,
+  loginWithPassword,
+  confirmEmail,
+  requestPasswordReset,
+  resetPassword,
+  findOrCreateUserFromGoogle,
+  getPostAuthRedirectPath,
+} = await import("@/modules/auth/service");
 
 function extractToken(text: string): string {
   const match = text.match(/token=([\w-]+)/);
@@ -32,129 +32,232 @@ beforeEach(async () => {
   sent.length = 0;
 });
 
-describe("requestVerificationCode + verifyCode (REGISTER)", () => {
-  it("creates a user and lets them verify with the emailed code", async () => {
-    const email = "alice@example.com";
-    const req = await requestVerificationCode(email, "REGISTER", "127.0.0.1");
-    if (!req.ok) throw new Error("expected ok");
-    expect(req.verificationId).not.toBeNull();
+describe("registerWithPassword", () => {
+  it("creates a user + EMAIL identity and sends a confirmation email, unverified until confirmed", async () => {
+    const result = await registerWithPassword("alice@example.com", "correct horse battery");
+    if (!result.ok) throw new Error("expected ok");
     expect(sent).toHaveLength(1);
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: result.userId } });
     expect(user.emailVerifiedAt).toBeNull();
 
-    const code = extractCode(sent[0].text);
-    const result = await verifyCode(req.verificationId, code);
-    expect(result).toEqual({ ok: true, userId: user.id });
-
-    const verifiedUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-    expect(verifiedUser.emailVerifiedAt).not.toBeNull();
-
-    const identity = await prisma.authIdentity.findUnique({
-      where: { provider_providerAccountId: { provider: "EMAIL", providerAccountId: email } },
+    const identity = await prisma.authIdentity.findUniqueOrThrow({
+      where: { provider_providerAccountId: { provider: "EMAIL", providerAccountId: "alice@example.com" } },
     });
-    expect(identity).not.toBeNull();
+    expect(identity.passwordHash).not.toBeNull();
+    expect(identity.passwordHash).not.toContain("correct horse battery");
   });
 
-  it("rejects a wrong code, increments attempts, and does not consume it", async () => {
-    const req = await requestVerificationCode("bob@example.com", "REGISTER", null);
-    if (!req.ok) throw new Error("expected ok");
-
-    const result = await verifyCode(req.verificationId, "000000");
-    expect(result).toEqual({ ok: false, reason: "invalid_code" });
-
-    const verification = await prisma.emailVerification.findUniqueOrThrow({
-      where: { id: req.verificationId! },
-    });
-    expect(verification.attempts).toBe(1);
-    expect(verification.consumedAt).toBeNull();
-  });
-
-  it("locks out after too many wrong attempts, even with the right code", async () => {
-    const req = await requestVerificationCode("carol@example.com", "REGISTER", null);
-    if (!req.ok) throw new Error("expected ok");
-
-    for (let i = 0; i < 5; i++) {
-      await verifyCode(req.verificationId, "000000");
-    }
-
-    const code = extractCode(sent[0].text);
-    const result = await verifyCode(req.verificationId, code);
-    expect(result).toEqual({ ok: false, reason: "too_many_attempts" });
-  });
-
-  it("rejects an expired code", async () => {
-    const req = await requestVerificationCode("dave@example.com", "REGISTER", null);
-    if (!req.ok) throw new Error("expected ok");
-
-    await prisma.emailVerification.update({
-      where: { id: req.verificationId! },
-      data: { expiresAt: new Date(Date.now() - 1000) },
-    });
-
-    const code = extractCode(sent[0].text);
-    const result = await verifyCode(req.verificationId, code);
-    expect(result).toEqual({ ok: false, reason: "expired" });
-  });
-
-  it("cannot redeem the same code twice", async () => {
-    const req = await requestVerificationCode("erin@example.com", "REGISTER", null);
-    if (!req.ok) throw new Error("expected ok");
-
-    const code = extractCode(sent[0].text);
-    const first = await verifyCode(req.verificationId, code);
-    expect(first.ok).toBe(true);
-
-    const second = await verifyCode(req.verificationId, code);
-    expect(second).toEqual({ ok: false, reason: "no_pending" });
+  it("rejects registering an email that's already taken", async () => {
+    await registerWithPassword("bob@example.com", "correct horse battery");
+    const second = await registerWithPassword("bob@example.com", "a different password");
+    expect(second).toEqual({ ok: false, reason: "email_taken" });
   });
 });
 
-describe("requestVerificationCode (LOGIN) — no account enumeration", () => {
-  it("sends nothing for an unregistered email but still reports success", async () => {
-    const result = await requestVerificationCode("ghost@example.com", "LOGIN", null);
-    expect(result).toEqual({ ok: true, verificationId: null });
-    expect(sent).toHaveLength(0);
+describe("loginWithPassword", () => {
+  it("logs in with the correct password", async () => {
+    const registered = await registerWithPassword("carol@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
+
+    const result = await loginWithPassword("carol@example.com", "correct horse battery", "127.0.0.1");
+    expect(result).toEqual({ ok: true, userId: registered.userId });
   });
 
-  it("sends a real code for a registered email", async () => {
-    await prisma.user.create({ data: { email: "frank@example.com" } });
-    const result = await requestVerificationCode("frank@example.com", "LOGIN", null);
-    if (!result.ok) throw new Error("expected ok");
-    expect(result.verificationId).not.toBeNull();
-    expect(sent).toHaveLength(1);
+  it("rejects the wrong password with a generic reason", async () => {
+    await registerWithPassword("dave@example.com", "correct horse battery");
+    const result = await loginWithPassword("dave@example.com", "wrong password", "127.0.0.1");
+    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
 
-  it("does not send to a suspended account", async () => {
-    await prisma.user.create({ data: { email: "suspended@example.com", status: "SUSPENDED" } });
-    const result = await requestVerificationCode("suspended@example.com", "LOGIN", null);
-    expect(result).toEqual({ ok: true, verificationId: null });
-    expect(sent).toHaveLength(0);
+  it("rejects an unknown email with the same generic reason (no enumeration)", async () => {
+    const result = await loginWithPassword("ghost@example.com", "anything", "127.0.0.1");
+    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
+  });
+
+  it("rejects a Google-only account (no password set) with the same generic reason", async () => {
+    const google = await findOrCreateUserFromGoogle({
+      sub: "google-sub-erin",
+      email: "erin@example.com",
+      emailVerified: true,
+      name: "Erin",
+    });
+    if (!google.ok) throw new Error("expected ok");
+
+    const result = await loginWithPassword("erin@example.com", "anything", "127.0.0.1");
+    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
+  });
+
+  it("rejects a suspended account", async () => {
+    const registered = await registerWithPassword("frank@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
+    await prisma.user.update({ where: { id: registered.userId }, data: { status: "SUSPENDED" } });
+
+    const result = await loginWithPassword("frank@example.com", "correct horse battery", "127.0.0.1");
+    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
 });
 
-describe("verifyToken (magic link)", () => {
+describe("confirmEmail", () => {
   it("verifies via the emailed token and cannot be reused", async () => {
-    const req = await requestVerificationCode("grace@example.com", "REGISTER", null);
-    if (!req.ok) throw new Error("expected ok");
+    const registered = await registerWithPassword("grace@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
     const token = extractToken(sent[0].text);
 
-    const result = await verifyToken(token);
-    expect(result.ok).toBe(true);
+    const result = await confirmEmail(token);
+    expect(result).toEqual({ ok: true });
 
-    const second = await verifyToken(token);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: registered.userId } });
+    expect(user.emailVerifiedAt).not.toBeNull();
+
+    const second = await confirmEmail(token);
     expect(second).toEqual({ ok: false, reason: "invalid_or_expired" });
+  });
+
+  it("rejects an unknown token", async () => {
+    const result = await confirmEmail("not-a-real-token");
+    expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
+  });
+});
+
+describe("requestPasswordReset + resetPassword", () => {
+  it("resets the password via the emailed token and cannot reuse it", async () => {
+    const registered = await registerWithPassword("henry@example.com", "old password here");
+    if (!registered.ok) throw new Error("expected ok");
+    sent.length = 0;
+
+    await requestPasswordReset("henry@example.com", "127.0.0.1");
+    expect(sent).toHaveLength(1);
+    const token = extractToken(sent[0].text);
+
+    const result = await resetPassword(token, "new password here");
+    expect(result).toEqual({ ok: true, userId: registered.userId });
+
+    const oldLogin = await loginWithPassword("henry@example.com", "old password here", "127.0.0.1");
+    expect(oldLogin.ok).toBe(false);
+    const newLogin = await loginWithPassword("henry@example.com", "new password here", "127.0.0.1");
+    expect(newLogin).toEqual({ ok: true, userId: registered.userId });
+
+    const second = await resetPassword(token, "yet another password");
+    expect(second).toEqual({ ok: false, reason: "invalid_or_expired" });
+  });
+
+  it("sends nothing for an unregistered email but still resolves (no enumeration)", async () => {
+    await requestPasswordReset("ghost@example.com", "127.0.0.1");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("lets a Google-only account set a password for the first time", async () => {
+    const google = await findOrCreateUserFromGoogle({
+      sub: "google-sub-ivy",
+      email: "ivy@example.com",
+      emailVerified: true,
+      name: "Ivy",
+    });
+    if (!google.ok) throw new Error("expected ok");
+
+    await requestPasswordReset("ivy@example.com", "127.0.0.1");
+    const token = extractToken(sent[0].text);
+    const result = await resetPassword(token, "brand new password");
+    expect(result).toEqual({ ok: true, userId: google.userId });
+
+    const login = await loginWithPassword("ivy@example.com", "brand new password", "127.0.0.1");
+    expect(login).toEqual({ ok: true, userId: google.userId });
+  });
+});
+
+describe("findOrCreateUserFromGoogle", () => {
+  it("creates a new, already-verified user on first sign-in", async () => {
+    const result = await findOrCreateUserFromGoogle({
+      sub: "google-sub-jack",
+      email: "jack@example.com",
+      emailVerified: true,
+      name: "Jack",
+    });
+    if (!result.ok) throw new Error("expected ok");
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: result.userId } });
+    expect(user.email).toBe("jack@example.com");
+    expect(user.emailVerifiedAt).not.toBeNull();
+
+    const identity = await prisma.authIdentity.findUniqueOrThrow({
+      where: { provider_providerAccountId: { provider: "GOOGLE", providerAccountId: "google-sub-jack" } },
+    });
+    expect(identity.userId).toBe(result.userId);
+  });
+
+  it("returns the same user on a repeat sign-in", async () => {
+    const first = await findOrCreateUserFromGoogle({
+      sub: "google-sub-kate",
+      email: "kate@example.com",
+      emailVerified: true,
+      name: "Kate",
+    });
+    if (!first.ok) throw new Error("expected ok");
+
+    const second = await findOrCreateUserFromGoogle({
+      sub: "google-sub-kate",
+      email: "kate@example.com",
+      emailVerified: true,
+      name: "Kate",
+    });
+    expect(second).toEqual({ ok: true, userId: first.userId });
+  });
+
+  it("auto-links to an existing password account with a matching verified email", async () => {
+    const registered = await registerWithPassword("leo@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
+
+    const google = await findOrCreateUserFromGoogle({
+      sub: "google-sub-leo",
+      email: "leo@example.com",
+      emailVerified: true,
+      name: "Leo",
+    });
+    expect(google).toEqual({ ok: true, userId: registered.userId });
+
+    // Auto-linking also unblocks matching eligibility even though the
+    // confirmation email was never clicked.
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: registered.userId } });
+    expect(user.emailVerifiedAt).not.toBeNull();
+  });
+
+  it("rejects an unverified Google email", async () => {
+    const result = await findOrCreateUserFromGoogle({
+      sub: "google-sub-mia",
+      email: "mia@example.com",
+      emailVerified: false,
+      name: "Mia",
+    });
+    expect(result).toEqual({ ok: false, reason: "email_not_verified" });
+
+    const user = await prisma.user.findUnique({ where: { email: "mia@example.com" } });
+    expect(user).toBeNull();
+  });
+
+  it("rejects a suspended account's Google sign-in", async () => {
+    const registered = await registerWithPassword("nina@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
+    await prisma.user.update({ where: { id: registered.userId }, data: { status: "SUSPENDED" } });
+
+    const result = await findOrCreateUserFromGoogle({
+      sub: "google-sub-nina",
+      email: "nina@example.com",
+      emailVerified: true,
+      name: "Nina",
+    });
+    expect(result).toEqual({ ok: false, reason: "account_disabled" });
   });
 });
 
 describe("getPostAuthRedirectPath", () => {
   it("sends users without a profile to onboarding", async () => {
-    const user = await prisma.user.create({ data: { email: "henry@example.com" } });
+    const user = await prisma.user.create({ data: { email: "oscar@example.com" } });
     expect(await getPostAuthRedirectPath(user.id)).toBe("/app/onboarding/profile");
   });
 
   it("sends users with an active profile to the app home", async () => {
-    const user = await prisma.user.create({ data: { email: "ivy@example.com" } });
+    const user = await prisma.user.create({ data: { email: "paula@example.com" } });
     await prisma.professionalProfile.create({ data: { userId: user.id, status: "ACTIVE" } });
     expect(await getPostAuthRedirectPath(user.id)).toBe("/app");
   });

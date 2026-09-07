@@ -18,8 +18,7 @@ export default async function RegisterPage() {
           </Link>
           <h1 className="mt-4 text-2xl font-bold text-ink">הצטרפות לקהילה</h1>
           <p className="mt-2 text-sm text-muted">
-            ללא סיסמה — מקבלים קוד לאימייל בכל כניסה. יצירת הפרופיל ובדיקת התאמות רלוונטיות הן ללא
-            עלות.
+            יצירת הפרופיל ובדיקת התאמות רלוונטיות הן ללא עלות.
           </p>
           <div className="mt-6">
             <AuthForm mode="register" />

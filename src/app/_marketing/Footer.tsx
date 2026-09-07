@@ -1,34 +1,49 @@
 import Link from "next/link";
 import { Container } from "@/shared/ui/Container";
+import { Reveal } from "@/shared/ui/Reveal";
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-warm-surface py-12">
-      <Container className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-lg font-bold text-ink">SamePath</p>
-          <p className="mt-2 max-w-xs text-sm text-muted">
-            קהילה מקצועית דיסקרטית לאנשים שמחפשים תפקיד דומה לשלכם.
-          </p>
-        </div>
-        <nav className="grid grid-cols-2 gap-x-12 gap-y-2 text-sm text-muted sm:flex sm:gap-12">
-          <Link href="/register" className="hover:text-ink">
-            הצטרפות
-          </Link>
-          <Link href="/login" className="hover:text-ink">
-            כניסה
-          </Link>
-          <Link href="/privacy" className="hover:text-ink">
-            פרטיות
-          </Link>
-          <Link href="/terms" className="hover:text-ink">
-            תנאי שימוש
-          </Link>
-        </nav>
-      </Container>
-      <Container className="mt-10 border-t border-border pt-6">
-        <p className="text-xs text-muted">© {new Date().getFullYear()} SamePath</p>
-      </Container>
-    </footer>
+    <Reveal y={12}>
+      <footer className="border-t border-ink/12 bg-warm-surface py-12">
+        <Container className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-lg font-black tracking-tight text-ink">SamePath</p>
+            <p className="mt-2 max-w-xs text-sm text-muted">
+              קהילה מקצועית ודיסקרטית לאנשים שלא רוצים לחפש עבודה ולהתכונן לראיונות לבד.
+            </p>
+          </div>
+          <nav className="grid grid-cols-2 gap-x-12 gap-y-2 text-sm text-muted sm:flex sm:flex-wrap sm:gap-x-8 sm:gap-y-2">
+            <a href="#how-it-works" className="hover:text-ink">
+              איך זה עובד
+            </a>
+            <a href="#privacy" className="hover:text-ink">
+              פרטיות
+            </a>
+            <a href="#pricing" className="hover:text-ink">
+              מחיר
+            </a>
+            <a href="#faq" className="hover:text-ink">
+              שאלות נפוצות
+            </a>
+            <Link href="/login" className="hover:text-ink">
+              כניסה
+            </Link>
+            <Link href="/terms" className="hover:text-ink">
+              תנאי שימוש
+            </Link>
+            <Link href="/privacy" className="hover:text-ink">
+              מדיניות פרטיות
+            </Link>
+            <a href="mailto:hello@samepath.app" className="hover:text-ink">
+              יצירת קשר
+            </a>
+          </nav>
+        </Container>
+        <Container className="mt-10 border-t border-ink/12 pt-6">
+          <p className="font-mono text-xs text-muted">© {new Date().getFullYear()} SamePath</p>
+        </Container>
+      </footer>
+    </Reveal>
   );
 }

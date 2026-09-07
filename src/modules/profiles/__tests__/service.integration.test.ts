@@ -187,9 +187,8 @@ describe("completePrivacyOnboarding", () => {
         employerConfirmed: false,
         blockEntireCorporateGroup: true,
         additionalBlockedCompanies: [],
-        preMatchDisplayMode: "ALIAS",
-        aliasText: "מ.",
-        shareFullNamePostMatch: false,
+        shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
         sharePhotoPostMatch: false,
         shareLinkedInPostMatch: false,
         sharePreciseLocationPostMatch: false,
@@ -226,8 +225,7 @@ describe("completePrivacyOnboarding", () => {
       employerConfirmed: true,
       blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
-      preMatchDisplayMode: "ALIAS",
-      aliasText: "מ.",
+      shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
       shareLinkedInPostMatch: false,
@@ -244,7 +242,7 @@ describe("completePrivacyOnboarding", () => {
     expect(profile.currentCompanyConfirmedAt).not.toBeNull();
     expect(profile.status).toBe("INCOMPLETE");
     expect(profile.privacyPreference?.blockEntireCorporateGroup).toBe(true);
-    expect(profile.disclosurePreference?.aliasText).toBe("מ.");
+    expect(profile.disclosurePreference).not.toBeNull();
 
     const blocked = await prisma.blockedCompany.findMany({ where: { userId: user.id } });
     expect(blocked).toHaveLength(1);
@@ -275,8 +273,7 @@ describe("updatePrivacySettings", () => {
       employerConfirmed: true,
       blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
-      preMatchDisplayMode: "ALIAS",
-      aliasText: "א.",
+      shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
       shareLinkedInPostMatch: false,
@@ -290,8 +287,7 @@ describe("updatePrivacySettings", () => {
     await updatePrivacySettings(user.id, {
       blockEntireCorporateGroup: false,
       additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
-      preMatchDisplayMode: "ALIAS",
-      aliasText: "א.",
+      shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
       shareLinkedInPostMatch: false,
@@ -364,8 +360,7 @@ describe("completeConnectionPreferences", () => {
       employerConfirmed: true,
       blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
-      preMatchDisplayMode: "FIRST_NAME",
-      firstName: "מיכל",
+      shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
       shareLinkedInPostMatch: false,
@@ -423,8 +418,7 @@ describe("getOnboardingStep", () => {
       employerConfirmed: true,
       blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
-      preMatchDisplayMode: "ALIAS",
-      aliasText: "א.",
+      shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
       shareLinkedInPostMatch: false,

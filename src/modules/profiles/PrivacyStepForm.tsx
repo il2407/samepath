@@ -6,6 +6,7 @@ import { CompanyPicker, type CompanySelection } from "@/modules/companies/Compan
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
 import { completePrivacyOnboardingAction } from "@/modules/profiles/actions";
+import { ProfilePhotoUploadCard } from "@/modules/profiles/ProfilePhotoUploadCard";
 
 type BlockReason = "FORMER_EMPLOYER" | "INTERVIEWING" | "CLIENT_OR_VENDOR" | "OTHER";
 
@@ -23,14 +24,20 @@ interface BlockedCompanyRow {
   note: string;
 }
 
-export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: string | null }) {
+export function PrivacyStepForm({
+  currentCompanyName,
+  currentPhotoDataUrl,
+  initialSharePhotoPostMatch,
+}: {
+  currentCompanyName: string | null;
+  currentPhotoDataUrl: string | null;
+  initialSharePhotoPostMatch: boolean;
+}) {
   const [employerConfirmed, setEmployerConfirmed] = useState(false);
   const [blockGroup, setBlockGroup] = useState(true);
   const [blocks, setBlocks] = useState<BlockedCompanyRow[]>([]);
 
-  const [displayMode, setDisplayMode] = useState<"ALIAS" | "FIRST_NAME">("ALIAS");
-  const [aliasText, setAliasText] = useState("");
-  const [firstName, setFirstName] = useState("");
+  const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(false);
 
   const [shareLinkedIn, setShareLinkedIn] = useState(false);
   const [linkedInUrl, setLinkedInUrl] = useState("");
@@ -40,6 +47,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
   const [phoneNumber, setPhoneNumber] = useState("");
   const [shareFullName, setShareFullName] = useState(false);
   const [fullName, setFullName] = useState("");
+  const [sharePhoto, setSharePhoto] = useState(initialSharePhotoPostMatch);
 
   const [resumeRetention, setResumeRetention] = useState<"DELETE_AFTER_CONFIRMATION" | "KEEP">(
     "DELETE_AFTER_CONFIRMATION",
@@ -63,8 +71,6 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
     setError(null);
 
     if (!employerConfirmed) return setError("יש לאשר את המעסיק הנוכחי כדי להמשיך");
-    if (displayMode === "ALIAS" && !aliasText.trim()) return setError("יש להזין כינוי להצגה");
-    if (displayMode === "FIRST_NAME" && !firstName.trim()) return setError("יש להזין שם פרטי");
     for (const b of blocks) {
       if (!b.company) return setError("יש לבחור חברה עבור כל שורת חסימה, או להסיר שורה ריקה");
     }
@@ -79,12 +85,10 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
           reason: b.reason,
           note: b.note.trim() || undefined,
         })),
-        preMatchDisplayMode: displayMode,
-        aliasText: displayMode === "ALIAS" ? aliasText.trim() : undefined,
-        firstName: displayMode === "FIRST_NAME" ? firstName.trim() : undefined,
         fullName: fullName.trim() || undefined,
+        shareCompanyPreMatch,
         shareFullNamePostMatch: shareFullName,
-        sharePhotoPostMatch: false,
+        sharePhotoPostMatch: sharePhoto,
         shareLinkedInPostMatch: shareLinkedIn,
         linkedInUrl: shareLinkedIn ? linkedInUrl.trim() || undefined : undefined,
         sharePreciseLocationPostMatch: shareLocation,
@@ -158,7 +162,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => removeBlock(b.key)} className="text-sm text-muted hover:text-red-600">
+            <button type="button" onClick={() => removeBlock(b.key)} className="text-sm text-muted hover:text-danger">
               הסרה
             </button>
           </div>
@@ -170,32 +174,20 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">איך תוצגו לפני אישור הדדי</h2>
-        <p className="text-sm text-muted">שם מלא ותמונה לעולם לא מוצגים לפני אישור הדדי. בחרו איך תרצו להיקרא עד אז.</p>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={displayMode === "ALIAS"} onChange={() => setDisplayMode("ALIAS")} />
-            כינוי
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={displayMode === "FIRST_NAME"} onChange={() => setDisplayMode("FIRST_NAME")} />
-            שם פרטי
-          </label>
+        <p className="text-sm text-muted">
+          שם מלא ותמונה לעולם לא מוצגים לפני אישור הדדי. במקומם, המערכת מציגה אתכם עם כינוי ואייקון
+          אקראיים — בדיוק כמו משתמש/ת אנונימי/ת בגיליון גוגל משותף. אי אפשר לבחור אותם, וזה מכוון: כך
+          הזהות שלכם לא נחשפת בטעות. הכינוי משתנה עם כל הצעת התאמה חדשה.
+        </p>
+        <div className="rounded-xl border border-border bg-paper p-4">
+          <ToggleRow label="להציג גם את שם המעסיק לפני אישור הדדי" checked={shareCompanyPreMatch} onChange={setShareCompanyPreMatch} />
+          <p className="mt-1.5 text-xs text-muted">
+            כברירת מחדל שם המעסיק מוצג רק לאחר אישור הדדי. אם תסמנו זאת, הוא יופיע כבר בכרטיס ההצעה —
+            שימושי כדי לסנן מראש חברה שפתאום הבנתם שאתם לא רוצים בה, גם אם לא חסמתם אותה מראש. מכיוון
+            שההתאמה כבר עברה את בדיקת הפרטיות (לא אותה חברה, לא חברה שמישהו מכם חסם), זה לעולם לא יחשוף
+            חברה שכבר נפסלה — אבל עדיין חושף יותר מידע לפני שהצד השני הסכים לכך.
+          </p>
         </div>
-        {displayMode === "ALIAS" ? (
-          <input
-            value={aliasText}
-            onChange={(e) => setAliasText(e.target.value)}
-            placeholder='לדוגמה: "מ." או "מפתחת Backend"'
-            className="w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-          />
-        ) : (
-          <input
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            placeholder="שם פרטי"
-            className="w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-          />
-        )}
       </section>
 
       <section className="space-y-3">
@@ -203,6 +195,13 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
         <p className="text-sm text-muted">
           כל הפרטים הבאים מוסתרים כברירת מחדל. סמנו רק את מה שתרצו לחשוף — ותמיד תוכלו לשנות בהמשך.
         </p>
+        <ProfilePhotoUploadCard
+          currentPhotoDataUrl={currentPhotoDataUrl}
+          avatarFallbackSeed={fullName || "SamePath"}
+          onUploaded={() => setSharePhoto(true)}
+          onRemoved={() => setSharePhoto(false)}
+        />
+        {currentPhotoDataUrl && <ToggleRow label="להציג את התמונה לאחר אישור הדדי" checked={sharePhoto} onChange={setSharePhoto} />}
         <div>
           <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
           {shareFullName && (
@@ -261,7 +260,7 @@ export function PrivacyStepForm({ currentCompanyName }: { currentCompanyName: st
         </div>
       </section>
 
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "שומר…" : "המשך להעדפות חיבור"}

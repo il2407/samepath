@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
 import { completeConnectionPreferencesAction } from "@/modules/profiles/actions";
+import { genderPreferenceLabels } from "@/modules/profiles/labels";
 
 type Format = "ONE_ON_ONE" | "GROUP" | "BOTH";
 type Cadence = "ONE_TIME" | "RECURRING" | "BOTH";
 type Mode = "ONLINE" | "IN_PERSON" | "BOTH";
+type GenderPreference = "MALE" | "FEMALE" | "BOTH";
 type Reason =
   | "SHARE_JOB_SEARCH"
   | "ACCOUNTABILITY"
@@ -16,19 +18,25 @@ type Reason =
   | "CODING_PRACTICE"
   | "SYSTEM_DESIGN"
   | "INTERVIEW_SIMULATION"
+  | "PROJECT_PITCH"
+  | "BEHAVIORAL_INTERVIEW"
+  | "MENTAL_SUPPORT"
   | "OTHER";
 
 const coreReasons: { value: Reason; label: string }[] = [
   { value: "SHARE_JOB_SEARCH", label: "לשתף בתהליך החיפוש" },
   { value: "ACCOUNTABILITY", label: "ליווי והתחייבות הדדית (accountability)" },
-  { value: "PROFESSIONAL_DISCUSSION", label: "דיון מקצועי" },
+  { value: "PROFESSIONAL_DISCUSSION", label: "שיתוף תהליך וייעוץ" },
   { value: "LEARNING_TOGETHER", label: "ללמוד יחד" },
 ];
 
 const optionalPracticeReasons: { value: Reason; label: string }[] = [
+  { value: "INTERVIEW_SIMULATION", label: "ראיון שאלות טכניות מדומה" },
+  { value: "BEHAVIORAL_INTERVIEW", label: "ראיון התנהגותי מדומה" },
+  { value: "SYSTEM_DESIGN", label: "ראיון עיצוב מערכות מדומה" },
   { value: "CODING_PRACTICE", label: "תרגול קוד" },
-  { value: "SYSTEM_DESIGN", label: "דיון בעיצוב מערכות" },
-  { value: "INTERVIEW_SIMULATION", label: "סימולציית ראיון" },
+  { value: "PROJECT_PITCH", label: "פיצ'ינג פרויקט והצגה עצמית" },
+  { value: "MENTAL_SUPPORT", label: "תמיכה נפשית ורגשית" },
 ];
 
 const dayLabels = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -44,6 +52,7 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
   const [format, setFormat] = useState<Format>("BOTH");
   const [cadence, setCadence] = useState<Cadence>("BOTH");
   const [mode, setMode] = useState<Mode>("ONLINE");
+  const [genderPreference, setGenderPreference] = useState<GenderPreference>("BOTH");
   const [languageId, setLanguageId] = useState<string>(languages[0]?.id ?? "");
   const [reasons, setReasons] = useState<Reason[]>(["SHARE_JOB_SEARCH"]);
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
@@ -83,6 +92,7 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
         format,
         cadence,
         mode,
+        genderPreference,
         languageId: languageId || null,
         timezone: "Asia/Jerusalem",
         reasons,
@@ -139,6 +149,18 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
             { value: "IN_PERSON", label: "פרונטלי" },
             { value: "BOTH", label: "שניהם" },
           ]}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold text-ink">מגדר עמיתים מתאימים</h2>
+        <RadioGroup
+          value={genderPreference}
+          onChange={setGenderPreference}
+          options={Object.entries(genderPreferenceLabels).map(([value, label]) => ({
+            value: value as GenderPreference,
+            label,
+          }))}
         />
       </section>
 
@@ -208,7 +230,7 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
           ))}
         </div>
         <div>
-          <p className="mb-2 text-sm text-muted">אופציונלי: תרגול ממוקד</p>
+          <p className="mb-2 text-sm text-muted">סוגי המפגש שמעניינים אותך</p>
           <div className="flex flex-wrap gap-2">
             {optionalPracticeReasons.map((r) => (
               <ReasonChip key={r.value} label={r.label} active={reasons.includes(r.value)} onClick={() => toggleReason(r.value)} />
@@ -217,7 +239,7 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
         </div>
       </section>
 
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "מפעיל…" : "הפעלת הפרופיל"}

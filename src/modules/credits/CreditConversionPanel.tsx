@@ -28,7 +28,7 @@ export function CreditConversionPanel({ tiers }: { tiers: { credits: number; acc
   return (
     <div className="space-y-3">
       {notice && <p className="rounded-xl bg-mint px-4 py-3 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
       <div className="flex flex-wrap gap-3">
         {tiers.map((tier) => (
           <Button key={tier.credits} variant="secondary" disabled={pending} onClick={() => convert(tier.credits)} className="px-4 py-2 text-sm">

@@ -11,9 +11,11 @@ import {
   reportConnection,
   selectConnectionGuide,
   sendMessage,
+  setMySessionTypes,
   suggestGuideForConnection,
 } from "@/modules/connections/service";
 import { PRACTICE_SESSION_CATEGORIES, type PracticeSessionCategorySlug } from "@/modules/guides/service";
+import type { ConnectionReason } from "@/generated/prisma/client";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -117,6 +119,40 @@ export async function clearConnectionGuideAction(connectionId: string): Promise<
   try {
     await clearConnectionGuide(user.id, connectionId);
     revalidatePath(`/app/connections/${connectionId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
+const connectionReasonEnum = z.enum([
+  "SHARE_JOB_SEARCH",
+  "ACCOUNTABILITY",
+  "PROFESSIONAL_DISCUSSION",
+  "LEARNING_TOGETHER",
+  "INTRO_VIDEO_CALL",
+  "CODING_PRACTICE",
+  "SYSTEM_DESIGN",
+  "INTERVIEW_SIMULATION",
+  "PROJECT_PITCH",
+  "BEHAVIORAL_INTERVIEW",
+  "MENTAL_SUPPORT",
+  "OTHER",
+]);
+
+const sessionTypesSchema = z.object({
+  connectionId: z.string().min(1),
+  sessionTypes: z.array(connectionReasonEnum),
+});
+
+export async function setMySessionTypesAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = sessionTypesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await setMySessionTypes(user.id, parsed.data.connectionId, parsed.data.sessionTypes as ConnectionReason[]);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
     return { ok: true };
   } catch {
     return { ok: false, error: "משהו השתבש. נסו שוב" };

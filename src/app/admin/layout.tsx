@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireModerator } from "@/modules/auth/session";
 import { logoutAction } from "@/modules/auth/actions";
 import { Container } from "@/shared/ui/Container";
+import { Logo } from "@/shared/ui/Logo";
 
 const navItems = [
   { href: "/admin", label: "לוח בקרה" },
@@ -23,8 +24,9 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     <div className="min-h-screen bg-paper" dir="rtl">
       <header className="border-b border-border bg-ink text-white">
         <Container className="flex h-14 items-center justify-between">
-          <Link href="/admin" className="text-sm font-bold">
-            SamePath · ניהול
+          <Link href="/admin" className="inline-flex items-center gap-2" aria-label="SamePath">
+            <Logo variant="mono" wordmarkClassName="text-sm" />
+            <span className="text-sm font-bold text-white/70">· ניהול</span>
           </Link>
           <div className="flex items-center gap-4 text-xs text-white/70">
             <span>{user.email}</span>

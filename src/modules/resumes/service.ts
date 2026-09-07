@@ -172,6 +172,10 @@ export async function confirmResumeDraft(userId: string, uploadId: string, keepF
   await prisma.$transaction([
     ...(draft ? [prisma.resumeExtractionDraft.update({ where: { id: draft.id }, data: { confirmedAt: new Date() } })] : []),
     prisma.userConfirmation.create({ data: { userId, type: "RESUME_DRAFT_CONFIRMED", payload: { uploadId } } }),
+    // The trust signal shown to other users (see PreMatchCandidateDTO.cvVerified):
+    // set once a real CV has been reviewed and confirmed, independent of
+    // whether the file itself is kept afterward.
+    prisma.professionalProfile.update({ where: { userId }, data: { cvVerifiedAt: new Date() } }),
   ]);
 
   if (!keepFile && upload.status !== "DELETED") {

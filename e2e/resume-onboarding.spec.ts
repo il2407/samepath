@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { latestVerificationCodeForEmail, uniqueTestEmail } from "./helpers/mail";
+import { uniqueTestEmail } from "./helpers/mail";
 import { buildMinimalPdf } from "./helpers/pdf-fixture";
 
 /**
@@ -22,15 +22,12 @@ test("upload a resume and confirm the pre-filled draft", async ({ page }) => {
 
   await page.goto("/register");
   await page.fill("#email", email);
-  await page.click('button[type="submit"]');
-  await page.waitForSelector("#code");
-  const code = await latestVerificationCodeForEmail(email);
-  await page.fill("#code", code);
+  await page.fill("#password", "e2e-test-password");
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/app\/onboarding\/profile/);
 
+  // Selecting a file uploads it immediately — no separate "upload" click.
   await page.setInputFiles('input[type="file"]', pdfPath);
-  await page.getByRole("button", { name: "העלאת קובץ" }).click();
 
   // The draft review form replaces the blank one once extraction finishes.
   await expect(page.getByRole("button", { name: "אישור ושמירת הפרופיל" })).toBeVisible({ timeout: 15_000 });

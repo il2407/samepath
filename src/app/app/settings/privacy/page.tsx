@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
 import { getPrivacySettings } from "@/modules/profiles/service";
+import { getOwnProfilePhotoDataUrl } from "@/modules/profiles/photo";
 import { PrivacySettingsForm } from "@/modules/profiles/PrivacySettingsForm";
 import { Container } from "@/shared/ui/Container";
 
@@ -13,6 +14,7 @@ export default async function PrivacySettingsPage() {
   if (!data) redirect("/app/onboarding/profile");
 
   const { profile, blockedCompanies } = data;
+  const photoDataUrl = await getOwnProfilePhotoDataUrl(user.id);
 
   return (
     <Container className="max-w-2xl py-10">
@@ -30,11 +32,11 @@ export default async function PrivacySettingsPage() {
               company: { id: b.company.id, canonicalName: b.company.canonicalName },
               reason: b.reason,
             })),
-            preMatchDisplayMode: profile.disclosurePreference?.preMatchDisplayMode ?? "ALIAS",
-            aliasText: profile.disclosurePreference?.aliasText ?? "",
-            firstName: profile.disclosurePreference?.firstName ?? "",
             fullName: profile.disclosurePreference?.fullName ?? "",
+            shareCompanyPreMatch: profile.disclosurePreference?.shareCompanyPreMatch ?? false,
             shareFullNamePostMatch: profile.disclosurePreference?.shareFullNamePostMatch ?? false,
+            photoDataUrl,
+            sharePhotoPostMatch: profile.disclosurePreference?.sharePhotoPostMatch ?? false,
             shareLinkedInPostMatch: profile.disclosurePreference?.shareLinkedInPostMatch ?? false,
             linkedInUrl: profile.disclosurePreference?.linkedInUrl ?? "",
             sharePreciseLocationPostMatch: profile.disclosurePreference?.sharePreciseLocationPostMatch ?? false,

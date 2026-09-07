@@ -41,7 +41,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetail }) {
 
   return (
     <div className="mt-6 space-y-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
         {group.myMembershipStatus === "NONE" && (
@@ -58,7 +58,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetail }) {
           type="button"
           onClick={() => setShowReport((v) => !v)}
           disabled={pending}
-          className="px-3 py-2 text-sm text-muted hover:text-red-600"
+          className="px-3 py-2 text-sm text-muted hover:text-danger"
         >
           דיווח על חשש
         </button>

@@ -2,67 +2,70 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isValidEmail, normalizeEmail } from "@/modules/auth/validation";
-import { requestVerificationCode, verifyCode, getPostAuthRedirectPath } from "@/modules/auth/service";
+import { isValidEmail, isValidPassword, normalizeEmail } from "@/modules/auth/validation";
 import {
-  clearPendingVerificationCookie,
-  createSession,
-  destroyCurrentSession,
-  getPendingVerificationId,
-  setPendingVerificationCookie,
-} from "@/modules/auth/session";
+  getPostAuthRedirectPath,
+  loginWithPassword,
+  registerWithPassword,
+  requestPasswordReset,
+  resetPassword,
+} from "@/modules/auth/service";
+import { createSession, destroyCurrentSession } from "@/modules/auth/session";
 
 async function clientIp(): Promise<string | null> {
   const h = await headers();
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
 }
 
-export type RequestCodeState = { ok: boolean; error?: string };
+export type ActionState = { ok: boolean; error?: string };
 
-async function requestCode(email: string, purpose: "REGISTER" | "LOGIN"): Promise<RequestCodeState> {
-  const normalized = normalizeEmail(email);
-  if (!isValidEmail(normalized)) {
-    return { ok: false, error: "כתובת האימייל אינה תקינה" };
+export async function registerWithPasswordAction(input: { email: string; password: string }): Promise<ActionState> {
+  const email = normalizeEmail(input.email);
+  if (!isValidEmail(email)) return { ok: false, error: "כתובת האימייל אינה תקינה" };
+  if (!isValidPassword(input.password)) return { ok: false, error: "הסיסמה חייבת להכיל לפחות 8 תווים" };
+
+  const result = await registerWithPassword(email, input.password);
+  if (!result.ok) return { ok: false, error: "כתובת האימייל הזו כבר רשומה. נסו להתחבר במקום" };
+
+  await createSession(result.userId);
+  redirect(await getPostAuthRedirectPath(result.userId));
+}
+
+export async function loginWithPasswordAction(input: { email: string; password: string }): Promise<ActionState> {
+  const email = normalizeEmail(input.email);
+  if (!isValidEmail(email) || !input.password) {
+    return { ok: false, error: "אימייל או סיסמה שגויים" };
   }
-  const result = await requestVerificationCode(normalized, purpose, await clientIp());
+
+  const result = await loginWithPassword(email, input.password, await clientIp());
   if (!result.ok) {
-    return { ok: false, error: "יותר מדי בקשות. נסו שוב בעוד כמה דקות" };
+    return {
+      ok: false,
+      error: result.reason === "rate_limited" ? "יותר מדי ניסיונות. נסו שוב בעוד כמה דקות" : "אימייל או סיסמה שגויים",
+    };
   }
-  if (result.verificationId) {
-    await setPendingVerificationCookie(result.verificationId);
-  } else {
-    await clearPendingVerificationCookie();
+
+  await createSession(result.userId);
+  redirect(await getPostAuthRedirectPath(result.userId));
+}
+
+export async function requestPasswordResetAction(email: string): Promise<ActionState> {
+  const normalized = normalizeEmail(email);
+  if (isValidEmail(normalized)) {
+    await requestPasswordReset(normalized, await clientIp());
   }
+  // Always a generic success, whether or not the email exists — no enumeration.
   return { ok: true };
 }
 
-export async function requestRegisterCodeAction(email: string): Promise<RequestCodeState> {
-  return requestCode(email, "REGISTER");
-}
+export async function resetPasswordAction(input: { token: string; password: string }): Promise<ActionState> {
+  if (!isValidPassword(input.password)) return { ok: false, error: "הסיסמה חייבת להכיל לפחות 8 תווים" };
 
-export async function requestLoginCodeAction(email: string): Promise<RequestCodeState> {
-  return requestCode(email, "LOGIN");
-}
+  const result = await resetPassword(input.token, input.password);
+  if (!result.ok) return { ok: false, error: "הקישור פג תוקף או שכבר נעשה בו שימוש. בקשו קישור חדש" };
 
-export type SubmitCodeState = { ok: boolean; error?: string };
-
-const errorMessages: Record<string, string> = {
-  no_pending: "פג תוקף הבקשה. בקשו קוד חדש",
-  expired: "הקוד פג תוקף. בקשו קוד חדש",
-  too_many_attempts: "יותר מדי ניסיונות. בקשו קוד חדש",
-  invalid_code: "קוד שגוי. נסו שוב",
-};
-
-export async function submitVerificationCodeAction(code: string): Promise<SubmitCodeState> {
-  const verificationId = await getPendingVerificationId();
-  const result = await verifyCode(verificationId, code.trim());
-  if (!result.ok) {
-    return { ok: false, error: errorMessages[result.reason] ?? "משהו השתבש. נסו שוב" };
-  }
   await createSession(result.userId);
-  await clearPendingVerificationCookie();
-  const redirectPath = await getPostAuthRedirectPath(result.userId);
-  redirect(redirectPath);
+  redirect(await getPostAuthRedirectPath(result.userId));
 }
 
 export async function logoutAction(): Promise<void> {

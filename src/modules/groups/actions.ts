@@ -16,7 +16,7 @@ export async function joinGroupAction(groupId: string): Promise<ActionState> {
     return { ok: false, error: "לא ניתן להצטרף לקבוצה זו כרגע" };
   }
   if (result === "ACCESS_REQUIRED") {
-    return { ok: false, error: "נדרשת גישה פעילה כדי להצטרף לקבוצה. אפשר להפעיל גישה בעמוד הגישה שלי." };
+    return { ok: false, error: "נדרשת גישה פעילה כדי להצטרף לקבוצה. אפשר להפעיל גישה בעמוד התוכנית שלי." };
   }
   return { ok: true, result };
 }

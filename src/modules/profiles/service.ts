@@ -8,7 +8,8 @@ import type {
   ConnectionFormatPreference,
   ConnectionModePreference,
   ConnectionReason,
-  DisplayNamePreference,
+  Gender,
+  GenderPreference,
   ResumeRetentionPreference,
 } from "@/generated/prisma/client";
 
@@ -32,6 +33,8 @@ export interface ProfileStepOneInput {
   tagIds: string[];
   languageIds: string[];
   positions: EmploymentPositionInput[];
+  /** Self-reported, optional — used only to evaluate a match's genderPreference. */
+  gender?: Gender | null;
 }
 
 export async function saveProfileStepOne(userId: string, input: ProfileStepOneInput): Promise<void> {
@@ -64,6 +67,7 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
         currentRoleTitle: input.currentRoleTitle,
         regionId: input.regionId,
         shortIntro: input.shortIntro,
+        gender: input.gender ?? null,
         experienceMonths,
         seniorityBandId,
         currentCompanyId,
@@ -77,6 +81,7 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
         currentRoleTitle: input.currentRoleTitle,
         regionId: input.regionId,
         shortIntro: input.shortIntro,
+        gender: input.gender ?? null,
         experienceMonths,
         seniorityBandId,
         currentCompanyId,
@@ -149,10 +154,8 @@ export interface PrivacyStepInput {
   employerConfirmed: boolean;
   blockEntireCorporateGroup: boolean;
   additionalBlockedCompanies: BlockedCompanyInput[];
-  preMatchDisplayMode: DisplayNamePreference;
-  aliasText?: string;
-  firstName?: string;
   fullName?: string;
+  shareCompanyPreMatch: boolean;
   shareFullNamePostMatch: boolean;
   sharePhotoPostMatch: boolean;
   shareLinkedInPostMatch: boolean;
@@ -206,10 +209,8 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
-        preMatchDisplayMode: input.preMatchDisplayMode,
-        aliasText: input.aliasText,
-        firstName: input.firstName,
         fullName: input.fullName,
+        shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,
@@ -221,10 +222,8 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
       },
       create: {
         profileId: profile.id,
-        preMatchDisplayMode: input.preMatchDisplayMode,
-        aliasText: input.aliasText,
-        firstName: input.firstName,
         fullName: input.fullName,
+        shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,
@@ -285,10 +284,8 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
-        preMatchDisplayMode: input.preMatchDisplayMode,
-        aliasText: input.aliasText,
-        firstName: input.firstName,
         fullName: input.fullName,
+        shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,
@@ -300,10 +297,8 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
       },
       create: {
         profileId: profile.id,
-        preMatchDisplayMode: input.preMatchDisplayMode,
-        aliasText: input.aliasText,
-        firstName: input.firstName,
         fullName: input.fullName,
+        shareCompanyPreMatch: input.shareCompanyPreMatch,
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         shareLinkedInPostMatch: input.shareLinkedInPostMatch,
@@ -348,6 +343,8 @@ export interface PreferencesStepInput {
   format: ConnectionFormatPreference;
   cadence: ConnectionCadence;
   mode: ConnectionModePreference;
+  /** Who to be matched with, by gender. Defaults to BOTH (no filter). */
+  genderPreference?: GenderPreference;
   languageId: string | null;
   timezone: string;
   reasons: ConnectionReason[];
@@ -369,6 +366,7 @@ export async function completeConnectionPreferences(userId: string, input: Prefe
         format: input.format,
         cadence: input.cadence,
         mode: input.mode,
+        genderPreference: input.genderPreference ?? "BOTH",
         languageId: input.languageId,
         timezone: input.timezone,
         reasons: input.reasons,
@@ -380,6 +378,7 @@ export async function completeConnectionPreferences(userId: string, input: Prefe
         format: input.format,
         cadence: input.cadence,
         mode: input.mode,
+        genderPreference: input.genderPreference ?? "BOTH",
         languageId: input.languageId,
         timezone: input.timezone,
         reasons: input.reasons,

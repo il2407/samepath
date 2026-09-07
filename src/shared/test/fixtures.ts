@@ -1,5 +1,11 @@
 import { prisma } from "@/shared/db";
-import type { ConnectionFormatPreference, ProfileStatus, UserStatus } from "@/generated/prisma/client";
+import type {
+  ConnectionFormatPreference,
+  Gender,
+  GenderPreference,
+  ProfileStatus,
+  UserStatus,
+} from "@/generated/prisma/client";
 
 interface AvailabilitySlotInput {
   dayOfWeek: number;
@@ -30,7 +36,8 @@ export interface TestUserOptions {
   tagIds?: string[];
   languageIds?: string[];
   experienceMonths?: number;
-  aliasText?: string;
+  gender?: Gender;
+  genderPreference?: GenderPreference;
 }
 
 /** Creates a User + ProfessionalProfile (with privacy/connection prefs) ready for domain tests. */
@@ -51,6 +58,7 @@ export async function createTestUser(options: TestUserOptions = {}) {
       currentCompanyConfirmedAt: options.companyConfirmed ? new Date() : undefined,
       professionalFieldId: options.professionalFieldId,
       experienceMonths: options.experienceMonths ?? 0,
+      gender: options.gender,
       privacyPreference: {
         create: { blockEntireCorporateGroup: options.blockEntireCorporateGroup ?? true },
       },
@@ -58,10 +66,11 @@ export async function createTestUser(options: TestUserOptions = {}) {
         create: {
           format: options.connectionFormat ?? "BOTH",
           timezone: options.timezone ?? "Asia/Jerusalem",
+          genderPreference: options.genderPreference ?? "BOTH",
         },
       },
       disclosurePreference: {
-        create: { preMatchDisplayMode: "ALIAS", aliasText: options.aliasText ?? "מ." },
+        create: {},
       },
       availabilitySlots: options.availability
         ? { create: options.availability.map((s) => ({ dayOfWeek: s.dayOfWeek, startMinute: s.startMinute, endMinute: s.endMinute })) }

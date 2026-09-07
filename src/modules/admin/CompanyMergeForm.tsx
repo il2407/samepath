@@ -50,7 +50,7 @@ export function CompanyMergeForm() {
         </div>
       </div>
       {notice && <p className="mt-3 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       <Button onClick={handleMerge} disabled={pending} className="mt-4 px-4 py-2 text-sm">
         {pending ? "ממזג…" : "מיזוג"}
       </Button>

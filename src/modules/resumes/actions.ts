@@ -26,6 +26,7 @@ export async function uploadResumeAction(formData: FormData): Promise<ActionStat
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/app/onboarding/profile");
+  revalidatePath("/app/settings/profile");
   return { ok: true };
 }
 
@@ -72,5 +73,21 @@ export async function discardResumeDraftAction(uploadId: string): Promise<Action
   const user = await requireUser();
   await discardResumeUpload(user.id, uploadId);
   revalidatePath("/app/onboarding/profile");
+  revalidatePath("/app/settings/profile");
+  return { ok: true };
+}
+
+/**
+ * The settings-page counterpart to confirmResumeDraftAction: for a user who
+ * already has an active profile and only wants the "CV verified" mark, not
+ * a full re-run of the profile-edit form. Confirms the resume bookkeeping
+ * (and therefore ProfessionalProfile.cvVerifiedAt) without touching any
+ * other profile field, and stays on the settings page instead of
+ * continuing the onboarding wizard.
+ */
+export async function verifyResumeFromSettingsAction(input: { uploadId: string; keepFile: boolean }): Promise<ActionState> {
+  const user = await requireUser();
+  await confirmResumeDraft(user.id, input.uploadId, input.keepFile);
+  revalidatePath("/app/settings/profile");
   return { ok: true };
 }

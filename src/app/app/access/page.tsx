@@ -6,7 +6,7 @@ import { prisma } from "@/shared/db";
 import { PurchaseButton } from "@/modules/payments/PurchaseButton";
 import { Container } from "@/shared/ui/Container";
 
-export const metadata: Metadata = { title: "הגישה שלי — SamePath" };
+export const metadata: Metadata = { title: "התוכנית שלי — SamePath" };
 
 const paymentStatusLabels: Record<string, string> = {
   CREATED: "נוצר",
@@ -27,7 +27,7 @@ export default async function AccessPage() {
 
   return (
     <Container className="max-w-2xl py-10">
-      <h1 className="text-2xl font-bold text-ink">הגישה שלי</h1>
+      <h1 className="text-2xl font-bold text-ink">התוכנית שלי</h1>
       <p className="mt-2 text-muted">
         גישה לתקופה קצובה, בלי חידוש אוטומטי. יצירת פרופיל ובדיקת התאמות רלוונטיות תמיד ללא עלות —
         גישה נדרשת רק כדי להשלים חיבור הדדי או להצטרף לקבוצה.

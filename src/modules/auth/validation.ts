@@ -7,3 +7,7 @@ export function normalizeEmail(raw: string): string {
 export function isValidEmail(email: string): boolean {
   return emailPattern.test(email) && email.length <= 254;
 }
+
+export function isValidPassword(password: string): boolean {
+  return password.length >= 8 && password.length <= 200;
+}

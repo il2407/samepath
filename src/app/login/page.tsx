@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Container } from "@/shared/ui/Container";
+import { LinkButton } from "@/shared/ui/Button";
 import { AuthForm } from "@/modules/auth/AuthForm";
 import { redirectIfAuthenticated } from "@/modules/auth/session";
 
@@ -18,21 +19,27 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             SamePath
           </Link>
           <h1 className="mt-4 text-2xl font-bold text-ink">כניסה לחשבון</h1>
-          <p className="mt-2 text-sm text-muted">נשלח קוד בן 6 ספרות לכתובת האימייל שלכם.</p>
-          {params?.linkError && (
-            <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-              הקישור פג תוקף או שכבר נעשה בו שימוש. אפשר לבקש קוד חדש למטה.
+          {params?.confirmError && (
+            <p className="mt-4 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">
+              קישור האימות פג תוקף או שכבר נעשה בו שימוש.
+            </p>
+          )}
+          {params?.googleError && (
+            <p className="mt-4 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">
+              ההתחברות עם Google נכשלה. אפשר לנסות שוב, או להתחבר עם אימייל וסיסמה.
             </p>
           )}
           <div className="mt-6">
             <AuthForm mode="login" />
           </div>
-          <p className="mt-6 text-center text-sm text-muted">
-            עדיין אין לכם חשבון?{" "}
-            <Link href="/register" className="font-medium text-primary hover:text-primary-dark">
-              הצטרפות
-            </Link>
-          </p>
+          <div className="mt-8 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted">חדשים כאן?</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <LinkButton href="/register" variant="secondary" className="mt-4 w-full">
+            יצירת חשבון חדש
+          </LinkButton>
         </div>
       </Container>
     </main>

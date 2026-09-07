@@ -60,7 +60,7 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
       {(item.contentWarnings.length > 0 || item.likelyDuplicateQuestions > 0) && (
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {item.contentWarnings.map((w) => (
-            <span key={w} className="rounded-full bg-red-50 px-2.5 py-1 text-red-700">
+            <span key={w} className="rounded-full bg-danger/10 px-2.5 py-1 text-danger-dark">
               אזהרה אוטומטית: {w}
             </span>
           ))}
@@ -72,7 +72,7 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
         </div>
       )}
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <input
@@ -107,7 +107,7 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
         >
           דחייה
         </button>
-        <button type="button" onClick={remove} disabled={pending} className="rounded-full px-4 py-1.5 text-sm text-red-600 hover:bg-red-50">
+        <button type="button" onClick={remove} disabled={pending} className="rounded-full px-4 py-1.5 text-sm text-danger hover:bg-danger/10">
           הסרה
         </button>
       </div>

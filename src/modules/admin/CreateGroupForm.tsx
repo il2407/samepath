@@ -119,7 +119,7 @@ export function CreateGroupForm({
         </select>
       </div>
       {notice && <p className="text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <Button type="submit" disabled={pending} className="px-4 py-2 text-sm">
         {pending ? "יוצר…" : "יצירת קבוצה"}
       </Button>

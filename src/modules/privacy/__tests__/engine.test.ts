@@ -22,6 +22,8 @@ function profile(overrides: Partial<EligibilityProfile> = {}): EligibilityProfil
     connectionFormat: "BOTH",
     timezone: "Asia/Jerusalem",
     availability: [{ dayOfWeek: 2, startMinute: 600, endMinute: 720 }],
+    gender: null,
+    genderPreference: "BOTH",
     ...overrides,
   };
 }
@@ -249,6 +251,45 @@ describe("evaluatePrivacy — each hard filter wins even when everything else is
     const subject = profile({ userId: "subject", availability: [] });
     const candidate = profile({ userId: "candidate" });
     expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
+  });
+
+  it("rejects a candidate whose gender doesn't match the subject's men/women-only preference", () => {
+    const subject = profile({ userId: "subject", genderPreference: "FEMALE" });
+    const candidate = profile({ userId: "candidate", gender: "MALE" });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({
+      allowed: false,
+      reasonCode: "incompatible_gender_preference",
+    });
+  });
+
+  it("rejects a subject whose gender doesn't match the candidate's men/women-only preference (symmetric)", () => {
+    const subject = profile({ userId: "subject", gender: "MALE" });
+    const candidate = profile({ userId: "candidate", genderPreference: "FEMALE" });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({
+      allowed: false,
+      reasonCode: "incompatible_gender_preference",
+    });
+  });
+
+  it("allows a candidate whose gender satisfies a men/women-only preference on both sides", () => {
+    const subject = profile({ userId: "subject", gender: "FEMALE", genderPreference: "MALE" });
+    const candidate = profile({ userId: "candidate", gender: "MALE", genderPreference: "FEMALE" });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
+  });
+
+  it("a BOTH preference (the default) applies no gender filter at all", () => {
+    const subject = profile({ userId: "subject", gender: null, genderPreference: "BOTH" });
+    const candidate = profile({ userId: "candidate", gender: "MALE", genderPreference: "BOTH" });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
+  });
+
+  it("rejects a men/women-only preference against an undisclosed (null) gender, since it can't be verified", () => {
+    const subject = profile({ userId: "subject", genderPreference: "MALE" });
+    const candidate = profile({ userId: "candidate", gender: null });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({
+      allowed: false,
+      reasonCode: "incompatible_gender_preference",
+    });
   });
 });
 

@@ -108,3 +108,27 @@ that must expire within seconds of its deadline) or before resume
 extraction needs to run somewhere other than the request that triggered
 it (e.g. genuinely large files, or a real AI parser with meaningful
 latency).
+
+## 10. Employer is now an opt-in pre-match field, not a structural absolute
+
+Decision #7's original claim — that the pre-match DTO type structurally
+cannot carry name/company/contact fields — is no longer fully true for
+company specifically. Product direction was to let a user optionally
+reveal their employer on the pre-match candidate card itself, on the
+reasoning that every candidate reaching that card has already passed the
+privacy hard filter (never same company, never a company either side has
+blocked), so showing it can only ever surface an employer neither side has
+already ruled out.
+
+The counter-argument — company is a strong deanonymizing signal once
+combined with the seniority/role/short-intro fields already shown, which
+cuts against the product's core "find people without being exposed"
+promise — was raised and acknowledged. The resolution: `company` is now on
+`PreMatchCandidateDTO`, but gated behind a new, defaulted-off
+`shareCompanyPreMatch` boolean on `IdentityDisclosurePreference` — the
+same "gated by the *owning* user's own preference, never the viewer's"
+mechanism every other identity field already uses. Nothing is revealed
+automatically; every existing and future profile defaults to the original
+hidden behavior unless its owner explicitly opts in. `toPostMatchDTO`
+inherits the same value (no separate post-match toggle) since post-match
+should never show less than pre-match.

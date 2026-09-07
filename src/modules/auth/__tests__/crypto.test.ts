@@ -1,14 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateToken, generateVerificationCode, hashSecret } from "@/modules/auth/crypto";
-
-describe("generateVerificationCode", () => {
-  it("always produces a zero-padded 6-digit string", () => {
-    for (let i = 0; i < 200; i++) {
-      const code = generateVerificationCode();
-      expect(code).toMatch(/^\d{6}$/);
-    }
-  });
-});
+import { generateToken, hashSecret } from "@/modules/auth/crypto";
 
 describe("generateToken", () => {
   it("produces distinct, URL-safe, high-entropy tokens", () => {

@@ -64,7 +64,7 @@ function ProductRowCard({ product }: { product: ProductRow }) {
         </label>
       </div>
       {notice && <p className="mt-2 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <button
         type="button"
         disabled={pending}
@@ -107,7 +107,7 @@ function CreateProductForm() {
         <input type="number" value={priceCents} onChange={(e) => setPriceCents(Number(e.target.value))} placeholder="מחיר באגורות" className="rounded-lg border border-border px-2 py-1.5 text-sm" />
         <input type="number" value={accessDurationDays} onChange={(e) => setAccessDurationDays(Number(e.target.value))} placeholder="ימי גישה" className="rounded-lg border border-border px-2 py-1.5 text-sm" />
       </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <button type="button" disabled={pending} onClick={submit} className="mt-2 rounded-full border border-primary px-4 py-1.5 text-sm text-primary-dark hover:bg-mint disabled:opacity-50">
         יצירה
       </button>
@@ -147,7 +147,7 @@ function GrantReplacementForm() {
         <input type="number" value={extraDays} onChange={(e) => setExtraDays(Number(e.target.value))} placeholder="ימים" className="rounded-lg border border-border px-2 py-1.5 text-sm" />
       </div>
       {notice && <p className="mt-2 text-sm text-primary-dark">{notice}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <button type="button" disabled={pending} onClick={submit} className="mt-2 rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50">
         הענקה
       </button>

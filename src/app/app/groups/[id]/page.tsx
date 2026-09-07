@@ -31,7 +31,7 @@ export default async function GroupDetailPage({ params }: PageProps<"/app/groups
       {group.guide && (
         <div className="mt-4 rounded-2xl border border-border bg-mint p-6">
           <span className="rounded-full bg-lime/60 px-3 py-1 text-xs font-semibold text-primary-dark">
-            מדריך אופציונלי
+            מערך מפגש מוצע
           </span>
           <p className="mt-2 font-semibold text-ink">{group.guide.title}</p>
           <p className="mt-1 text-sm text-ink/80">{group.guide.purpose}</p>

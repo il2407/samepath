@@ -50,7 +50,7 @@ export function ExperienceDetailActions({ experienceId }: { experienceId: string
           type="button"
           onClick={() => setShowReport((v) => !v)}
           disabled={pending}
-          className="rounded-full px-4 py-2 text-sm text-muted hover:text-red-600"
+          className="rounded-full px-4 py-2 text-sm text-muted hover:text-danger"
         >
           דיווח
         </button>

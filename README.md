@@ -177,7 +177,9 @@ The seed data exercises the interesting privacy scenarios on purpose:
 same-company and corporate-group pairs that must never match, a user who
 blocked a former employer, differing seniority/availability, and an
 `admin@example.com` (role `ADMIN`) account for reaching `/admin` — none of
-it is real personal data.
+it is real personal data. Every seeded user, including the admin, logs in
+with the password `samepath-dev-password` (`SEED_DEV_PASSWORD` in
+`prisma/seed/users.ts`).
 
 ### 5. Run it
 
@@ -185,9 +187,16 @@ it is real personal data.
 pnpm dev
 ```
 
-`http://localhost:3000`. There's no password flow — registering/logging in
-sends a 6-digit code, which the default `MAIL_ADAPTER=console` prints
-straight to the terminal running `pnpm dev` instead of sending real mail.
+`http://localhost:3000`. Registration/login is email+password, plus a
+"Continue with Google" button. `GOOGLE_OAUTH_ADAPTER` defaults to `"fake"`
+in `.env`/`.env.test` so Google sign-in works out of the box with no real
+credentials — it creates/logs in a canned test identity locally
+(`src/modules/auth/google-oauth.ts`). To use real Google sign-in, create an
+OAuth Client ID in Google Cloud Console (APIs & Services → Credentials →
+Create Credentials → OAuth client ID → Web application), add
+`http://localhost:3000/api/auth/google/callback` as an authorized redirect
+URI, put the Client ID/Secret in `.env` as `GOOGLE_CLIENT_ID`/
+`GOOGLE_CLIENT_SECRET`, and set `GOOGLE_OAUTH_ADAPTER="google"`.
 
 ## Testing
 
@@ -268,10 +277,16 @@ pure function with zero DB access so it's exhaustively unit-testable):
    surface anywhere in the app.
 7. **Progressive identity disclosure**: `src/modules/profiles/dto.ts`'s
    `toPreMatchDTO`/`toPostMatchDTO` are pure functions where the pre-match
-   type structurally cannot carry name/company/contact fields — it's not
-   a filter that could be forgotten, the forbidden fields aren't in the
-   input type. Post-match, each field revealed is gated by the *owning*
-   user's own disclosure preference, never the viewer's.
+   type structurally cannot carry name or contact fields — it's not a
+   filter that could be forgotten, the forbidden fields aren't in the input
+   type. Employer is the one pre-match exception, and it's still gated: it
+   only appears when the candidate's own `shareCompanyPreMatch` disclosure
+   preference is on (default off), never based on what the viewer wants.
+   Since every candidate reaching this DTO has already passed the hard
+   filter above, this can only ever reveal a company neither side has
+   already ruled out. Post-match, every other optional field is revealed
+   the same way — gated by the *owning* user's own disclosure preference,
+   never the viewer's.
 
 `docs/architecture-decisions.md` #7 explains why `PrivacyDecisionAudit`
 and `MatchScoreBreakdown` are separate, admin/test-only tables rather than
@@ -304,22 +319,33 @@ time — without any structure, it's easy for one side's agenda to
 dominate while the other leaves without what they came for. Once a
 connection is active, its room offers a suggested, timed structure
 (`SessionGuideStep.role`: `PRESENTER`/`LISTENER`/`BOTH`, plus
-`durationMinutes`) picked from one of three categories: project/
-architecture presentation, coding, and system design. Picking one is a
-single click — a random published guide from that category is attached
-to the `Connection` (`selectedGuideId`) so **both** participants see the
-identical structure, not two different random picks; it can be re-rolled
-or cleared any time. Coding guides are collaborative (`BOTH` throughout,
-matching "work on a problem together"); the other two use a presenter/
-listener/reflect/swap structure. Still fully optional — same as every
+`durationMinutes`) picked from one of four categories: an intro video
+call, project/architecture presentation, coding, and system design.
+Picking one is a single click — a random published guide from that
+category is attached to the `Connection` (`selectedGuideId`) so **both**
+participants see the identical structure, not two different random
+picks; it can be re-rolled or cleared any time. Coding guides are
+collaborative (`BOTH` throughout, matching "work on a problem
+together"); the other three use a presenter/listener/reflect/swap
+structure (the intro guide keeps everything `BOTH`, since it's a shared
+conversation, not a presentation). Still fully optional — same as every
 other guide, nothing here is tracked for completion or required.
+
+The same four categories double as `ConnectionReason` options in the
+connection room's "what type of session this time?" picker
+(`SessionTypeSelector` in `ConnectionRoom.tsx`) — each participant marks
+independently, no agreement required. Picking the intro option
+(`INTRO_VIDEO_CALL`) additionally auto-suggests the intro guide right
+away (unless one is already selected), so a pair meeting for the first
+time doesn't need a second click to see the get-to-know structure before
+moving on to a more focused session type later.
 
 Seed content (`prisma/seed/guides.ts`) uses genuinely common, publicly-
 known interview questions (Two Sum, LRU Cache, a URL shortener, a rate
 limiter, etc.) as a starter pool, not attributed to any real company's
 actual question bank and not meant to be the final set — extend it via
-the existing `/admin/guides` UI (category `coding` / `system-design` /
-`project-presentation`).
+the existing `/admin/guides` UI (category `intro` / `coding` /
+`system-design` / `project-presentation`).
 
 ## Resume upload & extraction
 

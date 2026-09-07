@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
+import { Avatar } from "@/shared/ui/Avatar";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 import { submitMatchDecisionAction } from "@/modules/matching/actions";
 import {
   connectionCadenceLabels,
@@ -15,14 +17,40 @@ import {
 import type { PreMatchCandidateDTO } from "@/modules/profiles/dto";
 import type { SafeReason } from "@/modules/matching/scoring";
 
+type MatchTier = "high" | "medium" | "low";
+
+function matchTier(percentage: number): MatchTier {
+  if (percentage >= 85) return "high";
+  if (percentage >= 70) return "medium";
+  return "low";
+}
+
+/** All three tiers stay within the single brand-blue hue — only the tint's strength changes, so a higher match visually stands out without introducing a second color. */
+const CARD_TIER_STYLES: Record<MatchTier, string> = {
+  high: "border-primary/50 bg-primary/[0.04]",
+  medium: "border-border bg-primary/[0.02]",
+  low: "border-border bg-white",
+};
+
+const BADGE_TIER_STYLES: Record<MatchTier, string> = {
+  high: "bg-primary text-white",
+  medium: "bg-mint text-primary-dark",
+  low: "bg-paper text-ink",
+};
+
 export function SuggestionCard({
   matchSuggestionId,
   candidate,
+  codeName,
+  matchPercentage,
   reasons,
   waitingOnOther,
 }: {
   matchSuggestionId: string;
   candidate: PreMatchCandidateDTO;
+  /** System-generated anonymous name shown until mutual approval — see SuggestionView.codeName. */
+  codeName: string;
+  matchPercentage: number;
   reasons: SafeReason[];
   waitingOnOther: boolean;
 }) {
@@ -34,7 +62,7 @@ export function SuggestionCard({
   const [reportDescription, setReportDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function decide(decision: "INTERESTED" | "NOT_NOW" | "NOT_RELEVANT" | "NEVER_AGAIN") {
+  function decide(decision: "INTERESTED" | "NOT_NOW" | "NEVER_AGAIN") {
     setError(null);
     startTransition(async () => {
       const result = await submitMatchDecisionAction({ matchSuggestionId, decision });
@@ -80,25 +108,36 @@ export function SuggestionCard({
     );
   }
 
+  const tier = matchTier(matchPercentage);
+
   return (
-    <div className="rounded-2xl border border-border bg-white p-6">
+    <div className={cn("rounded-2xl border p-6", CARD_TIER_STYLES[tier])}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-full bg-mint text-lg font-semibold text-primary-dark">
-            {candidate.displayName.slice(0, 1)}
-          </div>
+          <Avatar seed={codeName} />
           <div>
-            <p className="font-semibold text-ink">{candidate.displayName}</p>
+            <p className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+              {codeName}
+              {candidate.cvVerified && <CvVerifiedBadge />}
+            </p>
             <p className="text-sm text-muted">
-              {[candidate.professionalField, candidate.seniorityBand].filter(Boolean).join(" · ")}
+              {[candidate.company, candidate.professionalField, candidate.seniorityBand].filter(Boolean).join(" · ")}
             </p>
           </div>
         </div>
-        {waitingOnOther && (
-          <span className="shrink-0 rounded-full bg-warm-surface px-3 py-1 text-xs font-medium text-muted">
-            ממתין/ה לתשובת הצד השני
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span
+            className={cn("rounded-full px-3 py-1 text-xs font-semibold", BADGE_TIER_STYLES[tier])}
+            title="רמת ההתאמה מחושבת מהעדפות, תפקיד יעד, תחום, ניסיון, זמינות וכישורים משותפים"
+          >
+            {matchPercentage}% התאמה
           </span>
-        )}
+          {waitingOnOther && (
+            <span className="rounded-full bg-warm-surface px-3 py-1 text-xs font-medium text-muted">
+              ממתין/ה לתשובת הצד השני
+            </span>
+          )}
+        </div>
       </div>
 
       {candidate.targetRoles.length > 0 && (
@@ -106,14 +145,18 @@ export function SuggestionCard({
       )}
 
       {reasons.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm text-muted">
-          {reasons.map((r) => (
-            <li key={r.code} className="flex items-center gap-2">
-              <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
-              {r.labelHe}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <p className="text-xs font-medium text-muted">למה זה מתאים</p>
+          <ul className="mt-1 space-y-1 text-sm text-muted">
+            {reasons.map((r) => (
+              <li key={r.code} className="flex items-center gap-2">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                {r.labelHe}
+                <span className="text-ink/60">— {r.percentage}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {candidate.shortIntro && (
@@ -136,32 +179,36 @@ export function SuggestionCard({
         <p className="mt-3 text-xs text-muted">זמינות: {candidate.availabilitySummary.join(", ")}</p>
       )}
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
       {!waitingOnOther && (
         <div className="mt-5 flex flex-wrap gap-2">
           <Button onClick={() => decide("INTERESTED")} disabled={pending} className="px-5 py-2 text-sm">
             רוצה להתחבר
           </Button>
-          <Button variant="secondary" onClick={() => decide("NOT_NOW")} disabled={pending} className="px-5 py-2 text-sm">
-            לא עכשיו
-          </Button>
-          <Button variant="secondary" onClick={() => decide("NOT_RELEVANT")} disabled={pending} className="px-5 py-2 text-sm">
-            לא רלוונטי
+          <Button
+            variant="secondary"
+            onClick={() => decide("NOT_NOW")}
+            disabled={pending}
+            title="ההצעה תוסר מהרשימה — יכול להיות שתופיע שוב בעתיד"
+            className="px-5 py-2 text-sm"
+          >
+            לא מתאים לי כרגע
           </Button>
           <button
             type="button"
             onClick={() => decide("NEVER_AGAIN")}
             disabled={pending}
-            className="px-3 py-2 text-sm text-muted hover:text-red-600"
+            title="לעולם לא נציע לך את המשתמש/ת הזה/ה שוב"
+            className="px-3 py-2 text-sm text-muted hover:text-danger"
           >
-            לא להציע שוב
+            לא להציע יותר את המשתמש/ת הזה/ה
           </button>
           <button
             type="button"
             onClick={() => setShowReport((v) => !v)}
             disabled={pending}
-            className="px-3 py-2 text-sm text-muted hover:text-red-600"
+            className="px-3 py-2 text-sm text-muted hover:text-danger"
           >
             דיווח
           </button>

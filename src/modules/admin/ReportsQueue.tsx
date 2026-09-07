@@ -70,7 +70,7 @@ function UserReportCard({ report }: { report: UserReportRow }) {
       <p className="mt-2 text-xs text-muted">
         מדווח/ת: {report.reporter.email} {report.reportedUser && <>· על: {report.reportedUser.email}</>}
       </p>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           value={note}
@@ -128,12 +128,12 @@ function ContentReportCard({ report }: { report: ContentReportRow }) {
   return (
     <div className="rounded-2xl border border-border bg-white p-5">
       <div className="flex items-center justify-between">
-        <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs text-red-700">{reasonLabels[report.reason] ?? report.reason}</span>
+        <span className="rounded-full bg-danger/10 px-2.5 py-1 text-xs text-danger-dark">{reasonLabels[report.reason] ?? report.reason}</span>
         <span className="text-xs text-muted">{report.createdAt.toLocaleDateString("he-IL")}</span>
       </div>
       <p className="mt-2 text-sm text-ink">חברה: {report.experience.company.canonicalName}</p>
       {report.description && <p className="mt-2 text-sm text-ink/80">{report.description}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           value={note}
@@ -153,7 +153,7 @@ function ContentReportCard({ report }: { report: ContentReportRow }) {
           type="button"
           disabled={pending}
           onClick={unpublish}
-          className="rounded-full px-4 py-1.5 text-sm text-red-600 hover:bg-red-50"
+          className="rounded-full px-4 py-1.5 text-sm text-danger hover:bg-danger/10"
         >
           הסרה זמנית לבדיקה
         </button>
