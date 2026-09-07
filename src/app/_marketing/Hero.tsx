@@ -12,6 +12,9 @@ export function Hero() {
       <Container className="py-16 sm:py-24">
         <div className="grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
           <div>
+            <Reveal>
+              <SectionEyebrow>קהילה מקצועית ודיסקרטית לחיפוש עבודה</SectionEyebrow>
+            </Reveal>
             <Reveal delay={0.05}>
               <h1 className="mt-5 text-5xl leading-[1.06] font-black tracking-tight text-balance text-ink sm:text-6xl lg:text-[4rem]">
                 הראיון הוא אישי. ההכנה אליו לא חייבת להיות.
@@ -26,6 +29,9 @@ export function Hero() {
             <Reveal delay={0.2}>
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <LinkButton href="/register">מצאו לי אנשים במסלול שלי</LinkButton>
+                <LinkButton href="#how-it-works" variant="secondary">
+                  לראות איך זה עובד
+                </LinkButton>
               </div>
             </Reveal>
             <Reveal delay={0.3}>

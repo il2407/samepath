@@ -29,12 +29,6 @@ export function Footer() {
             <Link href="/login" className="hover:text-ink">
               כניסה
             </Link>
-            <Link href="/terms" className="hover:text-ink">
-              תנאי שימוש
-            </Link>
-            <Link href="/privacy" className="hover:text-ink">
-              מדיניות פרטיות
-            </Link>
             <a href="mailto:hello@samepath.app" className="hover:text-ink">
               יצירת קשר
             </a>

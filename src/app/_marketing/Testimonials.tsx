@@ -21,7 +21,7 @@ export function Testimonials() {
     <section className="bg-paper py-12 sm:py-16">
       <Container>
         <Reveal>
-          <p className="text-center text-base font-medium text-muted">מה שמענו מאנשים שמתכוננים לראיונות</p>
+          <h2 className="text-center text-base font-medium text-muted">מה שמענו מאנשים שמתכוננים לראיונות</h2>
         </Reveal>
         <div className="mt-8 grid gap-px overflow-hidden border border-ink/12 bg-ink/12 sm:grid-cols-2 lg:grid-cols-3">
           {quotes.map((quote, i) => (
