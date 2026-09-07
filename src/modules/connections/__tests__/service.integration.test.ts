@@ -6,9 +6,11 @@ import { prisma } from "@/shared/db";
 import {
   clearConnectionGuide,
   createConnectionFromMatch,
+  endConnection,
   getConnectionDetail,
   listConnectionsForUser,
   selectConnectionGuide,
+  sendMessage,
   setMySessionTypes,
   suggestGuideForConnection,
 } from "@/modules/connections/service";
@@ -224,5 +226,45 @@ describe("getConnectionDetail / listConnectionsForUser — progressive disclosur
     const items = await listConnectionsForUser(a.user.id);
     const item = items.find((i) => i.id === connection.id);
     expect(item?.otherPartyDisplayName).toBe("יוסי לוי");
+  });
+});
+
+describe("sendMessage (backlog item 13 — zero prior coverage)", () => {
+  it("persists a message and surfaces it in ascending order via getConnectionDetail", async () => {
+    const { a, b, connection } = await createTestConnection();
+
+    await sendMessage(a.user.id, connection.id, "היי, נעים להכיר!");
+    await sendMessage(b.user.id, connection.id, "גם לי, מתי נוח לך לדבר?");
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.messages).toHaveLength(2);
+    expect(detail?.messages[0]).toMatchObject({ senderId: a.user.id, body: "היי, נעים להכיר!" });
+    expect(detail?.messages[1]).toMatchObject({ senderId: b.user.id, body: "גם לי, מתי נוח לך לדבר?" });
+  });
+
+  it("refuses a non-participant", async () => {
+    const { connection } = await createTestConnection();
+    const outsider = await createTestUser();
+    await expect(sendMessage(outsider.user.id, connection.id, "hello")).rejects.toThrow();
+
+    const detail = await getConnectionDetail(outsider.user.id, connection.id);
+    expect(detail).toBeNull();
+  });
+
+  it("refuses to send once the connection is no longer ACTIVE", async () => {
+    const { a, connection } = await createTestConnection();
+    await endConnection(a.user.id, connection.id);
+
+    await expect(sendMessage(a.user.id, connection.id, "still here?")).rejects.toThrow();
+  });
+
+  it("preserves mixed Hebrew/English/URL/numeric content verbatim, with no mangling", async () => {
+    const { a, connection } = await createTestConnection();
+    const mixed = "בואו נדבר ב-14:30 — https://meet.google.com/abc-defg-hij (זמן ניו יורק: 7:30 AM)";
+
+    await sendMessage(a.user.id, connection.id, mixed);
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.messages[0]?.body).toBe(mixed);
   });
 });
