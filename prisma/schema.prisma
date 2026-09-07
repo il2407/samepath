@@ -1607,3 +1607,58 @@ model NotificationLog {
   @@index([userId, type])
   @@map("notification_logs")
 }
+
+// =============================================================================
+// Scheduled jobs (see docs/architecture-decisions.md #9 — this is the first
+// piece of background-job infrastructure in this codebase, added for the
+// automatic matching job). JobRun is a per-execution record: one row per run
+// of a named job, carrying run-level status/attempts/error tracking.
+// Contrast NotificationLog above, which stays the per-notification-sent
+// record — the two are deliberately separate tables, not merged fields.
+// No user-facing query path ever reads this table; it's an admin/diagnostic
+// table only, same restricted-visibility pattern as PrivacyDecisionAudit /
+// MatchScoreBreakdown (decision #7). A future admin dashboard tile can read
+// it directly once one exists.
+// =============================================================================
+
+enum JobRunStatus {
+  RUNNING
+  SUCCESS
+  /// Some users processed successfully, some failed after exhausting
+  /// retries — the run still completed rather than aborting.
+  PARTIAL
+  FAILURE
+}
+
+/// One row per execution of a named scheduled job (currently only
+/// "matching-suggestions" — src/modules/matching/job.ts). Overlap prevention
+/// across concurrent triggers is deliberately NOT implemented as a unique
+/// constraint on (jobName) filtered to status=RUNNING: Prisma's schema
+/// language has no partial/filtered-index support, so that would require
+/// hand-written migration SQL. Instead job.ts guards the
+/// "is one already RUNNING? then insert" check inside a single Postgres
+/// transaction holding `pg_try_advisory_xact_lock` — a transaction-scoped
+/// advisory lock that's released automatically on commit/rollback, so a
+/// crashed process can never leave it stuck — which makes that check+insert
+/// atomic against a second scheduler trigger firing at the same instant.
+model JobRun {
+  id         String       @id @default(cuid())
+  jobName    String
+  status     JobRunStatus @default(RUNNING)
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+
+  usersProcessed    Int @default(0)
+  matchesCreated    Int @default(0)
+  notificationsSent Int @default(0)
+  failedUserCount   Int @default(0)
+
+  /// Safe failure detail only: user IDs (cuids, not PII) plus a short error
+  /// class/message, truncated — never profile/résumé content. See
+  /// job.ts's summarizeFailures().
+  errorSummary String? @db.VarChar(4000)
+
+  @@index([jobName, status])
+  @@index([jobName, startedAt])
+  @@map("job_runs")
+}
