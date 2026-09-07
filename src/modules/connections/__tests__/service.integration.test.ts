@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
 import { createTestUser } from "@/shared/test/fixtures";
+import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 import { prisma } from "@/shared/db";
 import {
   clearConnectionGuide,
   createConnectionFromMatch,
   getConnectionDetail,
+  listConnectionsForUser,
   selectConnectionGuide,
   setMySessionTypes,
   suggestGuideForConnection,
@@ -15,9 +17,9 @@ beforeEach(async () => {
   await resetTestDatabase();
 });
 
-async function createTestConnection() {
-  const a = await createTestUser();
-  const b = await createTestUser();
+async function createTestConnection(options: { aOptions?: Parameters<typeof createTestUser>[0]; bOptions?: Parameters<typeof createTestUser>[0] } = {}) {
+  const a = await createTestUser(options.aOptions);
+  const b = await createTestUser(options.bOptions);
   const suggestion = await prisma.matchSuggestion.create({
     data: {
       userAId: a.user.id,
@@ -160,5 +162,67 @@ describe("setMySessionTypes", () => {
     const { connection } = await createTestConnection();
     const outsider = await createTestUser();
     await expect(setMySessionTypes(outsider.user.id, connection.id, ["MENTAL_SUPPORT"])).rejects.toThrow();
+  });
+});
+
+describe("getConnectionDetail / listConnectionsForUser — progressive disclosure at the CONNECTED stage (backlog item 9)", () => {
+  it("automatically reveals full name, employer, location, email, and phone once a real Connection exists", async () => {
+    const { a, connection } = await createTestConnection({
+      bOptions: {
+        companyId: (await prisma.company.create({ data: { canonicalName: "Acme" } })).id,
+        companyConfirmed: true,
+        disclosure: { fullName: "מיכל כהן", phoneNumber: "050-0000000" },
+      },
+    });
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty.fullName).toBe("מיכל כהן");
+    expect(detail?.otherParty.company).toBe("Acme");
+    expect(detail?.otherParty.email).toMatch(/@example\.com$/);
+    expect(detail?.otherParty.phoneNumber).toBe("050-0000000");
+    expect(detail?.otherPartyDisplayName).toBe("מיכל כהן");
+  });
+
+  it("never exposes a linkedInUrl key on otherParty — structurally removed, not merely hidden", async () => {
+    const { a, connection } = await createTestConnection();
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty as unknown as Record<string, unknown>).not.toHaveProperty("linkedInUrl");
+  });
+
+  it("falls back to the anonymous nickname when the other party never set a fullName (old account)", async () => {
+    const { a, connection } = await createTestConnection();
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty.fullName).toBeNull();
+    expect(detail?.otherPartyDisplayName).toBe(generateFriendlyNickname(connection.matchSuggestionId));
+  });
+
+  it("returns null when the other party has since been blocked — the privacy re-check still applies post-connection", async () => {
+    const { a, b, connection } = await createTestConnection();
+    await prisma.blockedUser.create({ data: { userId: a.user.id, blockedUserId: b.user.id } });
+
+    expect(await getConnectionDetail(a.user.id, connection.id)).toBeNull();
+  });
+
+  it("returns null when the other party's account has since been deleted (backlog item 22 — deleted-account coverage)", async () => {
+    const { a, b, connection } = await createTestConnection();
+    await prisma.user.update({ where: { id: b.user.id }, data: { status: "DELETED", deletedAt: new Date() } });
+
+    expect(await getConnectionDetail(a.user.id, connection.id)).toBeNull();
+  });
+
+  it("listConnectionsForUser also falls back to the nickname when fullName is unset", async () => {
+    const { a, connection } = await createTestConnection();
+    const items = await listConnectionsForUser(a.user.id);
+    const item = items.find((i) => i.id === connection.id);
+    expect(item?.otherPartyDisplayName).toBe(generateFriendlyNickname(connection.matchSuggestionId));
+  });
+
+  it("listConnectionsForUser shows the real full name once the other party has one on file", async () => {
+    const { a, connection } = await createTestConnection({
+      bOptions: { disclosure: { fullName: "יוסי לוי" } },
+    });
+    const items = await listConnectionsForUser(a.user.id);
+    const item = items.find((i) => i.id === connection.id);
+    expect(item?.otherPartyDisplayName).toBe("יוסי לוי");
   });
 });

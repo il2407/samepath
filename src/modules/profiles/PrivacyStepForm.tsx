@@ -34,16 +34,10 @@ export function PrivacyStepForm({
   initialSharePhotoPostMatch: boolean;
 }) {
   const [employerConfirmed, setEmployerConfirmed] = useState(false);
-  const [blockGroup, setBlockGroup] = useState(true);
   const [blocks, setBlocks] = useState<BlockedCompanyRow[]>([]);
 
   const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(false);
 
-  const [shareLinkedIn, setShareLinkedIn] = useState(false);
-  const [linkedInUrl, setLinkedInUrl] = useState("");
-  const [shareLocation, setShareLocation] = useState(false);
-  const [shareEmail, setShareEmail] = useState(false);
-  const [sharePhone, setSharePhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [shareFullName, setShareFullName] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -75,7 +69,6 @@ export function PrivacyStepForm({
     startTransition(async () => {
       const result = await completePrivacyOnboardingAction({
         employerConfirmed,
-        blockEntireCorporateGroup: blockGroup,
         additionalBlockedCompanies: blocks.map((b) => ({
           companyId: b.company!.id,
           reason: b.reason,
@@ -85,12 +78,7 @@ export function PrivacyStepForm({
         shareCompanyPreMatch,
         shareFullNamePostMatch: shareFullName,
         sharePhotoPostMatch: sharePhoto,
-        shareLinkedInPostMatch: shareLinkedIn,
-        linkedInUrl: shareLinkedIn ? linkedInUrl.trim() || undefined : undefined,
-        sharePreciseLocationPostMatch: shareLocation,
-        shareEmailPostMatch: shareEmail,
-        sharePhonePostMatch: sharePhone,
-        phoneNumber: sharePhone ? phoneNumber.trim() || undefined : undefined,
+        phoneNumber: phoneNumber.trim() || undefined,
       });
       if (result && !result.ok) setError(result.error ?? "משהו השתבש. נסו שוב");
     });
@@ -133,17 +121,12 @@ export function PrivacyStepForm({
         </Link>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold text-ink">חסימת קבוצת חברות</h2>
-        <p className="text-sm text-muted">
-          אם החברה הנוכחית שלכם היא חלק מקבוצת חברות (למשל חברת אם או חברות בנות), נחסום גם אותן —
-          ברירת המחדל הבטוחה. אפשר לבטל אם ידוע לכם שאין בכך צורך.
-        </p>
-        <label className="flex items-center gap-2 text-sm font-medium text-ink">
-          <input type="checkbox" checked={blockGroup} onChange={(e) => setBlockGroup(e.target.checked)} className="size-4" />
-          לחסום את כל קבוצת החברות
-        </label>
-      </section>
+      {/* The former "block entire corporate group" section was removed here
+          (backlog item 6): that toggle no longer does anything —
+          privacy/engine.ts's corporate-group check was removed, so
+          subsidiaries/parents of a blocked or same company are no longer
+          rejected on that basis alone. Only same-company and the explicit
+          blocks below still apply. */}
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">חברות נוספות לחסימה</h2>
@@ -199,9 +182,11 @@ export function PrivacyStepForm({
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-ink">מה לחשוף אחרי אישור הדדי</h2>
+        <h2 className="font-semibold text-ink">מה נחשף לאחר חיבור פעיל</h2>
         <p className="text-sm text-muted">
-          כל הפרטים הבאים מוסתרים כברירת מחדל. סמנו רק את מה שתרצו לחשוף — ותמיד תוכלו לשנות בהמשך.
+          לאחר שנוצר חיבור אמיתי (שני הצדדים הביעו עניין הדדי, ולשניכם יש כרטיס גישה פעיל), השם
+          המלא, המיקום, כתובת האימייל ומספר הטלפון (אם הוזן) נחשפים אוטומטית לצד השני — אין יותר
+          צורך לסמן כל פרט בנפרד. קישור ל-LinkedIn אינו נחשף בשום שלב.
         </p>
         <ProfilePhotoUploadCard
           currentPhotoDataUrl={currentPhotoDataUrl}
@@ -210,42 +195,34 @@ export function PrivacyStepForm({
           onRemoved={() => setSharePhoto(false)}
         />
         {currentPhotoDataUrl && <ToggleRow label="להציג את התמונה לאחר אישור הדדי" checked={sharePhoto} onChange={setSharePhoto} />}
-        <div>
-          <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
-          {shareFullName && (
-            <input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="שם מלא"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
+        <div className="rounded-xl border border-border bg-paper p-4">
+          <label className="block text-sm font-medium text-ink">שם מלא</label>
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="שם מלא"
+            className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
+          />
+          <p className="mt-2 text-xs text-muted">ייחשף אוטומטית ברגע שייווצר חיבור פעיל.</p>
+          <div className="mt-3">
+            <ToggleRow label="לחשוף שם פרטי כבר בשלב ההתאמה ההדדית (לפני יצירת החיבור)" checked={shareFullName} onChange={setShareFullName} />
+            <p className="mt-1.5 text-xs text-muted">
+              סימון זה מקדים רק את החשיפה החלקית: אם תסמנו אותו, השם הפרטי בלבד (המילה הראשונה בשם
+              המלא) יוצג כבר ברגע שהצד השני מביע עניין הדדי — עוד לפני שהחיבור נפתח בפועל. השם המלא
+              עצמו ייחשף בכל מקרה ברגע שייווצר חיבור פעיל, גם בלי לסמן כאן.
+            </p>
+          </div>
         </div>
         <div>
-          <ToggleRow label="קישור ל-LinkedIn" checked={shareLinkedIn} onChange={setShareLinkedIn} />
-          {shareLinkedIn && (
-            <input
-              value={linkedInUrl}
-              onChange={(e) => setLinkedInUrl(e.target.value)}
-              placeholder="https://www.linkedin.com/in/..."
-              dir="ltr"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
-        </div>
-        <ToggleRow label="מיקום מדויק" checked={shareLocation} onChange={setShareLocation} />
-        <ToggleRow label="כתובת אימייל" checked={shareEmail} onChange={setShareEmail} />
-        <div>
-          <ToggleRow label="מספר טלפון" checked={sharePhone} onChange={setSharePhone} />
-          {sharePhone && (
-            <input
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="050-0000000"
-              dir="ltr"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
+          <label className="block text-sm font-medium text-ink">מספר טלפון (אופציונלי)</label>
+          <input
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            placeholder="050-0000000"
+            dir="ltr"
+            className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
+          />
+          <p className="mt-1.5 text-xs text-muted">ייחשף אוטומטית רק לאחר יצירת חיבור פעיל. אפשר להשאיר ריק.</p>
         </div>
       </section>
 

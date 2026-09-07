@@ -66,18 +66,19 @@ const blockedCompanySchema = z.object({
 const privacyStepSchema = z
   .object({
     employerConfirmed: z.boolean(),
-    blockEntireCorporateGroup: z.boolean(),
     additionalBlockedCompanies: z.array(blockedCompanySchema),
     fullName: z.string().optional(),
     shareCompanyPreMatch: z.boolean(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
-    shareLinkedInPostMatch: z.boolean(),
-    linkedInUrl: z.string().optional(),
-    sharePreciseLocationPostMatch: z.boolean(),
-    shareEmailPostMatch: z.boolean(),
-    sharePhonePostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
+    // No blockEntireCorporateGroup (backlog item 6 — no longer
+    // user-configurable), no shareLinkedInPostMatch/linkedInUrl (backlog
+    // item 11 — LinkedIn is never disclosed), and no
+    // sharePreciseLocationPostMatch/shareEmailPostMatch/sharePhonePostMatch
+    // (backlog item 10 — automatic reveal at the CONNECTED stage) — see
+    // PrivacyStepInput in profiles/service.ts.
+    //
     // No resumeRetentionPreference here — see the comment on
     // PrivacyStepInput in profiles/service.ts for why the onboarding step no
     // longer collects this (the duplicated résumé-retention controls fix).
@@ -103,19 +104,15 @@ export async function completePrivacyOnboardingAction(input: unknown): Promise<A
 
 const privacySettingsSchema = z
   .object({
-    blockEntireCorporateGroup: z.boolean(),
     additionalBlockedCompanies: z.array(blockedCompanySchema),
     fullName: z.string().optional(),
     shareCompanyPreMatch: z.boolean(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
-    shareLinkedInPostMatch: z.boolean(),
-    linkedInUrl: z.string().optional(),
-    sharePreciseLocationPostMatch: z.boolean(),
-    shareEmailPostMatch: z.boolean(),
-    sharePhonePostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
     resumeRetentionPreference: z.enum(["DELETE_AFTER_CONFIRMATION", "KEEP"]),
+    // See the matching comment on privacyStepSchema above — same fields
+    // deliberately removed, same reasons.
   })
   .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
     message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",

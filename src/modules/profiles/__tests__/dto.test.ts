@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatAvailabilitySummary, toPostMatchDTO, toPreMatchDTO, type RawProfileForDto } from "@/modules/profiles/dto";
+import {
+  deriveFirstName,
+  formatAvailabilitySummary,
+  toMidStageDTO,
+  toPostMatchDTO,
+  toPreMatchDTO,
+  type RawProfileForDto,
+} from "@/modules/profiles/dto";
 
 function raw(overrides: Partial<RawProfileForDto> = {}): RawProfileForDto {
   return {
@@ -21,11 +28,6 @@ function raw(overrides: Partial<RawProfileForDto> = {}): RawProfileForDto {
       photoStorageKey: null,
       photoMimeType: null,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      linkedInUrl: null,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
       phoneNumber: null,
     },
     userEmail: "michal@example.com",
@@ -51,7 +53,7 @@ describe("formatAvailabilitySummary", () => {
 
 describe("toPreMatchDTO", () => {
   it("includes only the spec's allowed pre-match fields", () => {
-    const dto = toPreMatchDTO(raw());
+    const dto = toPreMatchDTO(raw(), false);
     expect(dto).toEqual({
       professionalField: "הנדסת תוכנה",
       seniorityBand: "מידלוול",
@@ -71,16 +73,16 @@ describe("toPreMatchDTO", () => {
 
   describe("cvVerified", () => {
     it("is false when the candidate has no cvVerifiedAt on record", () => {
-      expect(toPreMatchDTO(raw()).cvVerified).toBe(false);
+      expect(toPreMatchDTO(raw(), false).cvVerified).toBe(false);
     });
 
     it("is true once cvVerifiedAt is set, regardless of when", () => {
-      expect(toPreMatchDTO(raw({ cvVerifiedAt: new Date("2026-01-01") })).cvVerified).toBe(true);
+      expect(toPreMatchDTO(raw({ cvVerifiedAt: new Date("2026-01-01") }), false).cvVerified).toBe(true);
     });
   });
 
-  it("never includes name, photo, resume, email, phone, LinkedIn, or location keys at all", () => {
-    const dto = toPreMatchDTO(raw()) as unknown as Record<string, unknown>;
+  it("never includes name, first name, photo, resume, email, phone, LinkedIn, or location keys at all", () => {
+    const dto = toPreMatchDTO(raw(), true) as unknown as Record<string, unknown>;
     const forbiddenKeys = [
       "displayName",
       "fullName",
@@ -102,69 +104,137 @@ describe("toPreMatchDTO", () => {
     }
   });
 
-  describe("company (the one opt-in pre-match exception)", () => {
-    it("stays null when the candidate has not opted into shareCompanyPreMatch", () => {
-      const dto = toPreMatchDTO(raw());
-      expect(dto.company).toBeNull();
+  describe("company — reciprocal visibility (backlog item 8)", () => {
+    const sharingCandidate = () => raw({ disclosurePreference: { ...raw().disclosurePreference!, shareCompanyPreMatch: true } });
+
+    it("stays null when neither side opted into shareCompanyPreMatch", () => {
+      expect(toPreMatchDTO(raw(), false).company).toBeNull();
     });
 
-    it("reveals the employer only once the candidate explicitly opts in", () => {
-      const dto = toPreMatchDTO(
-        raw({ disclosurePreference: { ...raw().disclosurePreference!, shareCompanyPreMatch: true } }),
-      );
-      expect(dto.company).toBe("Acme Corp");
+    it("stays null when only the candidate opted in but the viewer did not", () => {
+      expect(toPreMatchDTO(sharingCandidate(), false).company).toBeNull();
     });
 
-    it("stays null when opted in but there's no current company on record", () => {
+    it("stays null when only the viewer opted in but the candidate did not", () => {
+      expect(toPreMatchDTO(raw(), true).company).toBeNull();
+    });
+
+    it("reveals the employer only when BOTH the viewer and the candidate opted in", () => {
+      expect(toPreMatchDTO(sharingCandidate(), true).company).toBe("Acme Corp");
+    });
+
+    it("stays null when both opted in but there's no current company on record", () => {
       const dto = toPreMatchDTO(
-        raw({
-          company: null,
-          disclosurePreference: { ...raw().disclosurePreference!, shareCompanyPreMatch: true },
-        }),
+        raw({ company: null, disclosurePreference: { ...raw().disclosurePreference!, shareCompanyPreMatch: true } }),
+        true,
       );
       expect(dto.company).toBeNull();
     });
   });
 });
 
-describe("toPostMatchDTO", () => {
-  it("reveals nothing extra when the candidate opted out of everything", () => {
-    const dto = toPostMatchDTO(raw());
-    expect(dto.fullName).toBeNull();
-    expect(dto.linkedInUrl).toBeNull();
-    expect(dto.region).toBeNull();
-    expect(dto.email).toBeNull();
-    expect(dto.phoneNumber).toBeNull();
-    expect(dto.company).toBeNull();
+describe("deriveFirstName", () => {
+  it("takes the first whitespace-separated token of a multi-word name", () => {
+    expect(deriveFirstName("מיכל כהן")).toBe("מיכל");
+    expect(deriveFirstName("Jane Q. Public")).toBe("Jane");
   });
 
-  it("reveals only the fields the candidate explicitly opted into, and nothing more", () => {
-    const dto = toPostMatchDTO(
-      raw({
-        disclosurePreference: {
-          fullName: "מיכל כהן",
-          shareCompanyPreMatch: true,
-          shareFullNamePostMatch: true,
-          photoStorageKey: null,
-          photoMimeType: null,
-          sharePhotoPostMatch: false,
-          shareLinkedInPostMatch: false,
-          linkedInUrl: "https://linkedin.com/in/michal",
-          sharePreciseLocationPostMatch: false,
-          shareEmailPostMatch: true,
-          sharePhonePostMatch: false,
-          phoneNumber: "050-0000000",
-        },
-      }),
+  it("returns the whole value for a single-word name — nothing to split", () => {
+    expect(deriveFirstName("Cher")).toBe("Cher");
+  });
+
+  it("collapses extra internal whitespace", () => {
+    expect(deriveFirstName("  מיכל   כהן  ")).toBe("מיכל");
+  });
+
+  it("returns null for null, empty, or whitespace-only input — never an empty string", () => {
+    expect(deriveFirstName(null)).toBeNull();
+    expect(deriveFirstName("")).toBeNull();
+    expect(deriveFirstName("   ")).toBeNull();
+  });
+});
+
+describe("toMidStageDTO — the mutual-interest stage, before a real Connection exists", () => {
+  it("includes everything toPreMatchDTO includes", () => {
+    const dto = toMidStageDTO(raw(), false);
+    expect(dto.targetRoles).toEqual(["מפתח/ת Backend"]);
+    expect(dto.shortIntro).toBe("מפתח/ת עם ניסיון במערכות בזמן אמת.");
+  });
+
+  it("firstName is null when the candidate has not opted into shareFullNamePostMatch (the early-reveal gate)", () => {
+    const dto = toMidStageDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, shareFullNamePostMatch: false } }), false);
+    expect(dto.firstName).toBeNull();
+  });
+
+  it("firstName is the first name once the candidate opted in", () => {
+    const dto = toMidStageDTO(
+      raw({ disclosurePreference: { ...raw().disclosurePreference!, shareFullNamePostMatch: true, fullName: "מיכל כהן" } }),
+      false,
     );
+    expect(dto.firstName).toBe("מיכל");
+  });
+
+  it("firstName is null when opted in but fullName was never set (old account) — never an empty string", () => {
+    const dto = toMidStageDTO(
+      raw({ disclosurePreference: { ...raw().disclosurePreference!, shareFullNamePostMatch: true, fullName: null } }),
+      false,
+    );
+    expect(dto.firstName).toBeNull();
+  });
+
+  it("firstName handles a single-word name gracefully", () => {
+    const dto = toMidStageDTO(
+      raw({ disclosurePreference: { ...raw().disclosurePreference!, shareFullNamePostMatch: true, fullName: "Cher" } }),
+      false,
+    );
+    expect(dto.firstName).toBe("Cher");
+  });
+
+  it("still applies the reciprocal company-visibility rule, same as pre-match", () => {
+    const bothShare = raw({
+      disclosurePreference: { ...raw().disclosurePreference!, shareCompanyPreMatch: true },
+    });
+    expect(toMidStageDTO(bothShare, false).company).toBeNull();
+    expect(toMidStageDTO(bothShare, true).company).toBe("Acme Corp");
+  });
+
+  it("never includes full name, email, phone, or LinkedIn keys — only firstName", () => {
+    const dto = toMidStageDTO(raw(), true) as unknown as Record<string, unknown>;
+    expect(dto).toHaveProperty("firstName");
+    for (const key of ["fullName", "email", "phone", "phoneNumber", "linkedIn", "linkedInUrl", "region", "location"]) {
+      expect(dto).not.toHaveProperty(key);
+    }
+  });
+});
+
+describe("toPostMatchDTO — the final CONNECTED stage (a real Connection exists)", () => {
+  it("automatically reveals full name, employer, location, email, and phone — no per-field toggle required (backlog item 10 design decision)", () => {
+    const dto = toPostMatchDTO(raw());
     expect(dto.fullName).toBe("מיכל כהן");
-    expect(dto.email).toBe("michal@example.com");
     expect(dto.company).toBe("Acme Corp");
-    // LinkedIn, location, and phone were NOT opted into — must stay hidden
-    // even though the underlying data exists.
-    expect(dto.linkedInUrl).toBeNull();
-    expect(dto.region).toBeNull();
+    expect(dto.region).toBe("מרכז");
+    expect(dto.email).toBe("michal@example.com");
+    // phoneNumber stays null here only because raw()'s default has no
+    // phoneNumber on file at all — see the next test for the case where one exists.
     expect(dto.phoneNumber).toBeNull();
+  });
+
+  it("reveals a phone number automatically once one is on file, with no separate toggle", () => {
+    const dto = toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, phoneNumber: "050-0000000" } }));
+    expect(dto.phoneNumber).toBe("050-0000000");
+  });
+
+  it("company is null when there's simply no current company on record, automatic reveal notwithstanding", () => {
+    expect(toPostMatchDTO(raw({ company: null })).company).toBeNull();
+  });
+
+  it("fullName is null for an old account that never set one — resolveDisplayName's nickname fallback (connections/service.ts) handles this", () => {
+    expect(toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, fullName: null } })).fullName).toBeNull();
+  });
+
+  it("never includes a linkedInUrl key at all — LinkedIn is structurally removed, not merely hidden", () => {
+    const dto = toPostMatchDTO(raw()) as unknown as Record<string, unknown>;
+    expect(dto).not.toHaveProperty("linkedInUrl");
   });
 
   it("still includes every pre-match field unchanged", () => {

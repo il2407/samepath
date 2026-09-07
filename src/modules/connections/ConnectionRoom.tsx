@@ -279,11 +279,6 @@ export function ConnectionRoom({
         <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted">
           {connection.otherParty.email && <span>{connection.otherParty.email}</span>}
           {connection.otherParty.phoneNumber && <span dir="ltr">{connection.otherParty.phoneNumber}</span>}
-          {connection.otherParty.linkedInUrl && (
-            <a href={connection.otherParty.linkedInUrl} target="_blank" rel="noreferrer" className="text-primary hover:text-primary-dark">
-              LinkedIn
-            </a>
-          )}
         </div>
       </div>
 

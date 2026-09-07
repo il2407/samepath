@@ -24,25 +24,18 @@ interface BlockedCompanyRow {
 }
 
 export interface PrivacySettingsInitial {
-  blockEntireCorporateGroup: boolean;
   blockedCompanies: { company: CompanySelection; reason: BlockReason }[];
   fullName: string;
   shareCompanyPreMatch: boolean;
   shareFullNamePostMatch: boolean;
   photoDataUrl: string | null;
   sharePhotoPostMatch: boolean;
-  shareLinkedInPostMatch: boolean;
-  linkedInUrl: string;
-  sharePreciseLocationPostMatch: boolean;
-  shareEmailPostMatch: boolean;
-  sharePhonePostMatch: boolean;
   phoneNumber: string;
   resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION" | "KEEP";
 }
 
 export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsInitial }) {
   const router = useRouter();
-  const [blockGroup, setBlockGroup] = useState(initial.blockEntireCorporateGroup);
   const [blocks, setBlocks] = useState<BlockedCompanyRow[]>(
     initial.blockedCompanies.map((b) => ({ key: crypto.randomUUID(), company: b.company, reason: b.reason, note: "" })),
   );
@@ -50,11 +43,6 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
   const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(initial.shareCompanyPreMatch);
   const [shareFullName, setShareFullName] = useState(initial.shareFullNamePostMatch);
   const [sharePhoto, setSharePhoto] = useState(initial.sharePhotoPostMatch);
-  const [shareLinkedIn, setShareLinkedIn] = useState(initial.shareLinkedInPostMatch);
-  const [linkedInUrl, setLinkedInUrl] = useState(initial.linkedInUrl);
-  const [shareLocation, setShareLocation] = useState(initial.sharePreciseLocationPostMatch);
-  const [shareEmail, setShareEmail] = useState(initial.shareEmailPostMatch);
-  const [sharePhone, setSharePhone] = useState(initial.sharePhonePostMatch);
   const [phoneNumber, setPhoneNumber] = useState(initial.phoneNumber);
   const [resumeRetention, setResumeRetention] = useState(initial.resumeRetentionPreference);
 
@@ -83,18 +71,12 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
 
     startTransition(async () => {
       const result = await updatePrivacySettingsAction({
-        blockEntireCorporateGroup: blockGroup,
         additionalBlockedCompanies: blocks.map((b) => ({ companyId: b.company!.id, reason: b.reason })),
         fullName: fullName.trim() || undefined,
         shareCompanyPreMatch,
         shareFullNamePostMatch: shareFullName,
         sharePhotoPostMatch: sharePhoto,
-        shareLinkedInPostMatch: shareLinkedIn,
-        linkedInUrl: shareLinkedIn ? linkedInUrl.trim() || undefined : undefined,
-        sharePreciseLocationPostMatch: shareLocation,
-        shareEmailPostMatch: shareEmail,
-        sharePhonePostMatch: sharePhone,
-        phoneNumber: sharePhone ? phoneNumber.trim() || undefined : undefined,
+        phoneNumber: phoneNumber.trim() || undefined,
         resumeRetentionPreference: resumeRetention,
       });
       if (!result.ok) {
@@ -108,13 +90,8 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8" noValidate>
-      <section className="space-y-3">
-        <h2 className="font-semibold text-ink">חסימת קבוצת חברות</h2>
-        <label className="flex items-center gap-2 text-sm font-medium text-ink">
-          <input type="checkbox" checked={blockGroup} onChange={(e) => setBlockGroup(e.target.checked)} className="size-4" />
-          לחסום את כל קבוצת החברות של המעסיק הנוכחי שלי
-        </label>
-      </section>
+      {/* The former "block entire corporate group" section was removed here
+          (backlog item 6) — see the matching comment in PrivacyStepForm.tsx. */}
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">חברות חסומות</h2>
@@ -166,7 +143,12 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-ink">מה לחשוף אחרי אישור הדדי</h2>
+        <h2 className="font-semibold text-ink">מה נחשף לאחר חיבור פעיל</h2>
+        <p className="text-sm text-muted">
+          לאחר שנוצר חיבור אמיתי (שני הצדדים הביעו עניין הדדי, ולשניכם יש כרטיס גישה פעיל), השם
+          המלא, המיקום, כתובת האימייל ומספר הטלפון (אם הוזן) נחשפים אוטומטית לצד השני — אין יותר
+          צורך לסמן כל פרט בנפרד. קישור ל-LinkedIn אינו נחשף בשום שלב.
+        </p>
         <ProfilePhotoUploadCard
           currentPhotoDataUrl={initial.photoDataUrl}
           avatarFallbackSeed={fullName || "SamePath"}
@@ -174,40 +156,33 @@ export function PrivacySettingsForm({ initial }: { initial: PrivacySettingsIniti
           onRemoved={() => setSharePhoto(false)}
         />
         {initial.photoDataUrl && <ToggleRow label="להציג את התמונה לאחר אישור הדדי" checked={sharePhoto} onChange={setSharePhoto} />}
-        <div>
-          <ToggleRow label="שם מלא" checked={shareFullName} onChange={setShareFullName} />
-          {shareFullName && (
-            <input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="שם מלא"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
+        <div className="rounded-xl border border-border bg-paper p-4">
+          <label className="block text-sm font-medium text-ink">שם מלא</label>
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="שם מלא"
+            className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
+          />
+          <p className="mt-2 text-xs text-muted">ייחשף אוטומטית ברגע שייווצר חיבור פעיל.</p>
+          <div className="mt-3">
+            <ToggleRow label="לחשוף שם פרטי כבר בשלב ההתאמה ההדדית (לפני יצירת החיבור)" checked={shareFullName} onChange={setShareFullName} />
+            <p className="mt-1.5 text-xs text-muted">
+              סימון זה מקדים רק את החשיפה החלקית: אם תסמנו אותו, השם הפרטי בלבד (המילה הראשונה בשם
+              המלא) יוצג כבר ברגע שהצד השני מביע עניין הדדי — עוד לפני שהחיבור נפתח בפועל. השם המלא
+              עצמו ייחשף בכל מקרה ברגע שייווצר חיבור פעיל, גם בלי לסמן כאן.
+            </p>
+          </div>
         </div>
         <div>
-          <ToggleRow label="קישור ל-LinkedIn" checked={shareLinkedIn} onChange={setShareLinkedIn} />
-          {shareLinkedIn && (
-            <input
-              value={linkedInUrl}
-              onChange={(e) => setLinkedInUrl(e.target.value)}
-              dir="ltr"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
-        </div>
-        <ToggleRow label="מיקום מדויק" checked={shareLocation} onChange={setShareLocation} />
-        <ToggleRow label="כתובת אימייל" checked={shareEmail} onChange={setShareEmail} />
-        <div>
-          <ToggleRow label="מספר טלפון" checked={sharePhone} onChange={setSharePhone} />
-          {sharePhone && (
-            <input
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              dir="ltr"
-              className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-            />
-          )}
+          <label className="block text-sm font-medium text-ink">מספר טלפון (אופציונלי)</label>
+          <input
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            dir="ltr"
+            className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
+          />
+          <p className="mt-1.5 text-xs text-muted">ייחשף אוטומטית רק לאחר יצירת חיבור פעיל. אפשר להשאיר ריק.</p>
         </div>
       </section>
 

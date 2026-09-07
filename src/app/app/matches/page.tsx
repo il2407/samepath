@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
 import { getOnboardingStep } from "@/modules/profiles/service";
-import { getActiveSuggestionsForUser } from "@/modules/matching/service";
+import { getActiveSuggestionsForUser, getMidStageMatchesForUser } from "@/modules/matching/service";
 import { SuggestionCard } from "@/modules/matching/SuggestionCard";
 import { RefreshMatchesButton } from "@/modules/matching/RefreshMatchesButton";
 import { Container } from "@/shared/ui/Container";
+import { Avatar } from "@/shared/ui/Avatar";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 
 export const metadata: Metadata = { title: "הצעות התאמה — SamePath" };
 
@@ -13,7 +16,10 @@ export default async function MatchesPage() {
   const user = await requireUser();
   if ((await getOnboardingStep(user.id)) !== "done") redirect("/app");
 
-  const suggestions = await getActiveSuggestionsForUser(user.id);
+  const [suggestions, midStageMatches] = await Promise.all([
+    getActiveSuggestionsForUser(user.id),
+    getMidStageMatchesForUser(user.id),
+  ]);
 
   return (
     <Container className="max-w-2xl py-10">
@@ -24,8 +30,47 @@ export default async function MatchesPage() {
       <p className="mt-2 text-muted">
         כל הצעה מוצגת עם כינוי ואייקון אקראיים.
         <br />
-        שם מלא, תמונה ומעסיק נחשפים רק לאחר אישור הדדי.
+        שם פרטי (אם הצד השני בחר לחשוף אותו מוקדם) מוצג לאחר עניין הדדי; שם מלא, תמונה, מיקום,
+        אימייל וטלפון נחשפים רק לאחר יצירת חיבור פעיל.
       </p>
+
+      {midStageMatches.length > 0 && (
+        <section className="mt-6 space-y-3">
+          <h2 className="text-lg font-semibold text-ink">התאמות הדדיות — בדרך לחיבור</h2>
+          <p className="text-sm text-muted">
+            שני הצדדים הביעו עניין הדדי. ברגע ששניכם תפעילו כרטיס גישה, ייפתח חיבור אמיתי ותוכלו
+            לשוחח.
+          </p>
+          <div className="space-y-3">
+            {midStageMatches.map((m) => (
+              <div key={m.id} className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4">
+                <Avatar seed={m.codeName} />
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+                    {m.candidate.firstName ?? m.codeName}
+                    {m.candidate.cvVerified && <CvVerifiedBadge />}
+                  </p>
+                  <p className="text-sm text-muted">
+                    {[m.candidate.company, m.candidate.professionalField].filter(Boolean).join(" · ")} ·{" "}
+                    {m.matchPercentage}% התאמה
+                  </p>
+                </div>
+                {m.status === "ACCESS_CHECK" && (
+                  <div className="shrink-0 text-end">
+                    {m.viewerNeedsAccessPass ? (
+                      <Link href="/app/access" className="text-sm font-medium text-primary hover:text-primary-dark">
+                        להפעלת כרטיס גישה
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted">ממתין/ה לצד השני</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <details className="group mt-4 rounded-2xl border border-border bg-white p-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus">

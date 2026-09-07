@@ -5,6 +5,7 @@ import { prisma } from "@/shared/db";
 import {
   generateSuggestionsForUser,
   getActiveSuggestionsForUser,
+  getMidStageMatchesForUser,
   recordMatchDecision,
   retryAccessCheckSuggestionsForUser,
 } from "@/modules/matching/service";
@@ -129,6 +130,201 @@ describe("getActiveSuggestionsForUser", () => {
 
     const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: subject.user.id } });
     expect(suggestion.status).toBe("BLOCKED");
+  });
+});
+
+describe("getActiveSuggestionsForUser — reciprocal employer visibility (backlog item 8)", () => {
+  it("hides the employer when neither side opted into shareCompanyPreMatch", async () => {
+    const { field, role } = await seedRole();
+    const acme = await createTestCompany("Acme");
+    const subject = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      companyId: acme.id,
+      companyConfirmed: true,
+      disclosure: { shareCompanyPreMatch: false },
+    });
+
+    await generateSuggestionsForUser(subject.user.id);
+    const views = await getActiveSuggestionsForUser(subject.user.id);
+    expect(views).toHaveLength(1);
+    expect(views[0].candidate.company).toBeNull();
+  });
+
+  it("hides the employer when only the candidate opted in but the viewer (subject) did not", async () => {
+    const { field, role } = await seedRole();
+    const acme = await createTestCompany("Acme");
+    const subject = await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      disclosure: { shareCompanyPreMatch: false },
+    });
+    await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      companyId: acme.id,
+      companyConfirmed: true,
+      disclosure: { shareCompanyPreMatch: true },
+    });
+
+    await generateSuggestionsForUser(subject.user.id);
+    const views = await getActiveSuggestionsForUser(subject.user.id);
+    expect(views).toHaveLength(1);
+    expect(views[0].candidate.company).toBeNull();
+  });
+
+  it("hides the employer when only the viewer (subject) opted in but the candidate did not", async () => {
+    const { field, role } = await seedRole();
+    const acme = await createTestCompany("Acme");
+    const subject = await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      disclosure: { shareCompanyPreMatch: true },
+    });
+    await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      companyId: acme.id,
+      companyConfirmed: true,
+      disclosure: { shareCompanyPreMatch: false },
+    });
+
+    await generateSuggestionsForUser(subject.user.id);
+    const views = await getActiveSuggestionsForUser(subject.user.id);
+    expect(views).toHaveLength(1);
+    expect(views[0].candidate.company).toBeNull();
+  });
+
+  it("reveals the employer only when BOTH the viewer and the candidate opted into shareCompanyPreMatch", async () => {
+    const { field, role } = await seedRole();
+    const acme = await createTestCompany("Acme");
+    const subject = await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      disclosure: { shareCompanyPreMatch: true },
+    });
+    await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      companyId: acme.id,
+      companyConfirmed: true,
+      disclosure: { shareCompanyPreMatch: true },
+    });
+
+    await generateSuggestionsForUser(subject.user.id);
+    const views = await getActiveSuggestionsForUser(subject.user.id);
+    expect(views).toHaveLength(1);
+    expect(views[0].candidate.company).toBe("Acme");
+  });
+});
+
+describe("getMidStageMatchesForUser — the mutual-interest stage before a real Connection exists (backlog item 9)", () => {
+  it("returns nothing when there are no mutual matches yet", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    expect(await getMidStageMatchesForUser(a.user.id)).toEqual([]);
+  });
+
+  it("surfaces an ACCESS_CHECK match with the candidate's first name when they opted into early reveal", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      disclosure: { fullName: "מיכל כהן", shareFullNamePostMatch: true },
+    });
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+
+    const views = await getMidStageMatchesForUser(a.user.id);
+    expect(views).toHaveLength(1);
+    expect(views[0].status).toBe("ACCESS_CHECK");
+    expect(views[0].candidate.firstName).toBe("מיכל");
+    // Neither side has an access pass — it's on both of them, so from a's
+    // perspective a still needs one too.
+    expect(views[0].viewerNeedsAccessPass).toBe(true);
+  });
+
+  it("falls back to firstName: null when the candidate did not opt into early reveal — caller must fall back to the nickname", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      disclosure: { fullName: "מיכל כהן", shareFullNamePostMatch: false },
+    });
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+
+    const views = await getMidStageMatchesForUser(a.user.id);
+    expect(views[0].candidate.firstName).toBeNull();
+  });
+
+  it("does not surface a match that has already become a real Connection (ACTIVE)", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await grantActiveAccessPass(a.user.id);
+    await grantActiveAccessPass(b.user.id);
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    const result = await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+    expect(result.status).toBe("ACTIVE");
+
+    expect(await getMidStageMatchesForUser(a.user.id)).toEqual([]);
+  });
+
+  it("says viewerNeedsAccessPass: false when it's specifically the OTHER side that still needs to activate", async () => {
+    const { field, role } = await seedRole();
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await grantActiveAccessPass(a.user.id); // only a has a pass — b is the blocker
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+
+    const views = await getMidStageMatchesForUser(a.user.id);
+    expect(views[0].status).toBe("ACCESS_CHECK");
+    expect(views[0].viewerNeedsAccessPass).toBe(false);
+  });
+
+  it("hides (and blocks) a mid-stage match whose privacy status changed since mutual interest", async () => {
+    const { field, role } = await seedRole();
+    const acme = await createTestCompany("Acme");
+    const a = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const b = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    await generateSuggestionsForUser(a.user.id);
+    const suggestion = await prisma.matchSuggestion.findFirstOrThrow({ where: { userAId: a.user.id } });
+
+    await recordMatchDecision(a.user.id, suggestion.id, "INTERESTED");
+    await recordMatchDecision(b.user.id, suggestion.id, "INTERESTED");
+    expect(await getMidStageMatchesForUser(a.user.id)).toHaveLength(1);
+
+    // a takes a job at b's company after mutual interest but before either
+    // side clears the access gate.
+    await prisma.professionalProfile.update({
+      where: { userId: b.user.id },
+      data: { currentCompanyId: acme.id, currentCompanyConfirmedAt: new Date() },
+    });
+    await prisma.professionalProfile.update({
+      where: { userId: a.user.id },
+      data: { currentCompanyId: acme.id, currentCompanyConfirmedAt: new Date() },
+    });
+
+    expect(await getMidStageMatchesForUser(a.user.id)).toEqual([]);
+    const refreshed = await prisma.matchSuggestion.findUniqueOrThrow({ where: { id: suggestion.id } });
+    expect(refreshed.status).toBe("BLOCKED");
   });
 });
 

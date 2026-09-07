@@ -185,15 +185,10 @@ describe("completePrivacyOnboarding", () => {
     await expect(
       completePrivacyOnboarding(user.id, {
         employerConfirmed: false,
-        blockEntireCorporateGroup: true,
         additionalBlockedCompanies: [],
         shareCompanyPreMatch: false,
-      shareFullNamePostMatch: false,
+        shareFullNamePostMatch: false,
         sharePhotoPostMatch: false,
-        shareLinkedInPostMatch: false,
-        sharePreciseLocationPostMatch: false,
-        shareEmailPostMatch: false,
-        sharePhonePostMatch: false,
       }),
     ).rejects.toThrow();
 
@@ -222,15 +217,10 @@ describe("completePrivacyOnboarding", () => {
 
     await completePrivacyOnboarding(user.id, {
       employerConfirmed: true,
-      blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
@@ -239,6 +229,8 @@ describe("completePrivacyOnboarding", () => {
     });
     expect(profile.currentCompanyConfirmedAt).not.toBeNull();
     expect(profile.status).toBe("INCOMPLETE");
+    // blockEntireCorporateGroup is no longer accepted as input (backlog item
+    // 6) — it's always the schema default, never written by this function.
     expect(profile.privacyPreference?.blockEntireCorporateGroup).toBe(true);
     expect(profile.disclosurePreference).not.toBeNull();
 
@@ -274,15 +266,10 @@ describe("completePrivacyOnboarding", () => {
 
     await completePrivacyOnboarding(user.id, {
       employerConfirmed: true,
-      blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
@@ -311,28 +298,18 @@ describe("updatePrivacySettings", () => {
     });
     await completePrivacyOnboarding(user.id, {
       employerConfirmed: true,
-      blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
     });
     await prisma.professionalProfile.update({ where: { userId: user.id }, data: { status: "ACTIVE" } });
 
     await updatePrivacySettings(user.id, {
-      blockEntireCorporateGroup: false,
       additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
       resumeRetentionPreference: "KEEP",
     });
 
@@ -342,13 +319,71 @@ describe("updatePrivacySettings", () => {
     });
     expect(profile.status).toBe("ACTIVE"); // unchanged
     expect(profile.resumeRetentionPreference).toBe("KEEP");
-    expect(profile.privacyPreference?.blockEntireCorporateGroup).toBe(false);
+    // blockEntireCorporateGroup is no longer accepted as settings input
+    // (backlog item 6) — it stays at its onboarding-time value (the schema
+    // default, true) regardless of what updatePrivacySettings is called
+    // with; there is no field left in PrivacySettingsInput to change it.
+    expect(profile.privacyPreference?.blockEntireCorporateGroup).toBe(true);
 
     const blocked = await prisma.blockedCompany.findMany({ where: { userId: user.id } });
     expect(blocked.map((b) => b.companyId)).toEqual([formerCo.id]);
 
     const confirmations = await prisma.userConfirmation.findMany({ where: { userId: user.id } });
     expect(confirmations).toHaveLength(2); // still just the two from onboarding, no new ones
+  });
+
+  it("never writes LinkedIn or the retired per-field post-match toggles, even though the columns still exist (backlog items 6/10/11)", async () => {
+    const { field, role, region } = await seedRefs();
+    const user = await prisma.user.create({ data: { email: "legacy-toggles@example.com" } });
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      languageIds: [],
+      positions: [],
+    });
+    await completePrivacyOnboarding(user.id, {
+      employerConfirmed: true,
+      additionalBlockedCompanies: [],
+      shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+    });
+
+    // Simulate a pre-WS3 row that still has the retired toggles turned on
+    // (e.g. an account created before this backlog item shipped).
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
+    await prisma.identityDisclosurePreference.update({
+      where: { profileId: profile.id },
+      data: {
+        shareLinkedInPostMatch: true,
+        linkedInUrl: "https://linkedin.com/in/legacy",
+        sharePreciseLocationPostMatch: true,
+        shareEmailPostMatch: true,
+        sharePhonePostMatch: true,
+      },
+    });
+
+    // Neither completePrivacyOnboarding nor updatePrivacySettings has a
+    // field for any of these anymore — calling them must not reset (or
+    // otherwise touch) the legacy values one way or the other.
+    await updatePrivacySettings(user.id, {
+      additionalBlockedCompanies: [],
+      shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      resumeRetentionPreference: "KEEP",
+    });
+
+    const disclosure = await prisma.identityDisclosurePreference.findUniqueOrThrow({ where: { profileId: profile.id } });
+    expect(disclosure.shareLinkedInPostMatch).toBe(true);
+    expect(disclosure.linkedInUrl).toBe("https://linkedin.com/in/legacy");
+    expect(disclosure.sharePreciseLocationPostMatch).toBe(true);
+    expect(disclosure.shareEmailPostMatch).toBe(true);
+    expect(disclosure.sharePhonePostMatch).toBe(true);
   });
 });
 
@@ -397,15 +432,10 @@ describe("completeConnectionPreferences", () => {
     });
     await completePrivacyOnboarding(user.id, {
       employerConfirmed: true,
-      blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
     });
 
     expect(await getOnboardingStep(user.id)).toBe("preferences");
@@ -454,15 +484,10 @@ describe("getOnboardingStep", () => {
 
     await completePrivacyOnboarding(user.id, {
       employerConfirmed: true,
-      blockEntireCorporateGroup: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      shareLinkedInPostMatch: false,
-      sharePreciseLocationPostMatch: false,
-      shareEmailPostMatch: false,
-      sharePhonePostMatch: false,
     });
     expect(await getOnboardingStep(user.id)).toBe("preferences");
 

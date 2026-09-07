@@ -19,6 +19,14 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${counter}@example.com`;
 }
 
+export interface TestDisclosureOptions {
+  fullName?: string;
+  shareCompanyPreMatch?: boolean;
+  /** Repurposed (backlog item 9/10, see profiles/dto.ts): "reveal first name early, at the mutual-interest stage." */
+  shareFullNamePostMatch?: boolean;
+  phoneNumber?: string;
+}
+
 export interface TestUserOptions {
   email?: string;
   userStatus?: UserStatus;
@@ -38,6 +46,8 @@ export interface TestUserOptions {
   experienceMonths?: number;
   gender?: Gender;
   genderPreference?: GenderPreference;
+  /** Identity-disclosure preferences (backlog items 8/9 — WS3) — omitted fields keep their schema defaults (false/null). */
+  disclosure?: TestDisclosureOptions;
 }
 
 /** Creates a User + ProfessionalProfile (with privacy/connection prefs) ready for domain tests. */
@@ -70,7 +80,7 @@ export async function createTestUser(options: TestUserOptions = {}) {
         },
       },
       disclosurePreference: {
-        create: {},
+        create: options.disclosure ?? {},
       },
       availabilitySlots: options.availability
         ? { create: options.availability.map((s) => ({ dayOfWeek: s.dayOfWeek, startMinute: s.startMinute, endMinute: s.endMinute })) }
