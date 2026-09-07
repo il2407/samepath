@@ -163,14 +163,16 @@ model User {
   privacyAuditsAsSubject   PrivacyDecisionAudit[] @relation("PrivacyAuditSubject")
   privacyAuditsAsCandidate PrivacyDecisionAudit[] @relation("PrivacyAuditCandidate")
 
-  matchSuggestionsAsA   MatchSuggestion[]                @relation("MatchSuggestionUserA")
-  matchSuggestionsAsB   MatchSuggestion[]                @relation("MatchSuggestionUserB")
-  matchDecisions        MatchDecision[]
-  connectionsAsA        Connection[]                     @relation("ConnectionUserA")
-  connectionsAsB        Connection[]                     @relation("ConnectionUserB")
-  sentMessages          ConnectionMessage[]
-  meetingStatusesMarked MeetingStatus[]
-  sessionTypeSelections ConnectionSessionTypeSelection[]
+  matchSuggestionsAsA         MatchSuggestion[]                @relation("MatchSuggestionUserA")
+  matchSuggestionsAsB         MatchSuggestion[]                @relation("MatchSuggestionUserB")
+  matchDecisions              MatchDecision[]
+  connectionsAsA              Connection[]                     @relation("ConnectionUserA")
+  connectionsAsB              Connection[]                     @relation("ConnectionUserB")
+  sentMessages                ConnectionMessage[]
+  meetingStatusesMarked       MeetingStatus[]
+  sessionTypeSelections       ConnectionSessionTypeSelection[]
+  meetingProposalsMade        MeetingProposal[]                @relation("MeetingProposalProposedBy")
+  meetingProposalsRespondedTo MeetingProposal[]                @relation("MeetingProposalRespondedBy")
 
   reportsFiled    Report[] @relation("ReportReporter")
   reportsAgainst  Report[] @relation("ReportReportedUser")
@@ -514,7 +516,7 @@ model IdentityDisclosurePreference {
   /// only ever surfaces an employer neither side has ruled out — but it is
   /// still a real anonymity trade-off the profile owner must choose, never
   /// something inferred or forced on them.
-  shareCompanyPreMatch Boolean               @default(false)
+  shareCompanyPreMatch Boolean @default(false)
 
   shareFullNamePostMatch        Boolean @default(false)
   /// Storage key of the uploaded profile photo (see src/shared/storage.ts),
@@ -880,6 +882,7 @@ model Connection {
 
   messages              ConnectionMessage[]
   meetingStatuses       MeetingStatus[]
+  meetingProposals      MeetingProposal[]
   reports               Report[]
   sessionTypeSelections ConnectionSessionTypeSelection[]
 
@@ -931,6 +934,78 @@ model MeetingStatus {
 
   @@index([connectionId])
   @@map("meeting_statuses")
+}
+
+/// PROPOSED   — awaiting the other participant's response; the only "open" state
+///              (see connections/service.ts#isOpenProposalStatus).
+/// ACCEPTED   — the non-proposing participant confirmed it. Terminal.
+/// DECLINED   — the non-proposing participant said no, OR the proposer withdrew
+///              their own still-open proposal (see service.ts#declineMeetingProposal
+///              for the documented "self-decline = withdraw" allowance). Terminal.
+/// COUNTER_PROPOSED — terminal for *this row*: it means a new MeetingProposal row
+///              (whose `previousProposalId` points back here) was created in its
+///              place. The new row itself starts life as a fresh PROPOSED, so at
+///              any moment at most one row per connection is ever actually open.
+enum MeetingProposalStatus {
+  PROPOSED
+  ACCEPTED
+  DECLINED
+  COUNTER_PROPOSED
+}
+
+/// Backlog item 14 (WS7) — the propose/accept/decline/counter-propose negotiation
+/// for actually scheduling a meeting between two connected participants. This is
+/// deliberately separate from MeetingStatus above: MeetingStatus is an append-only
+/// "it happened" log filled in after the fact (who marked it, when), while
+/// MeetingProposal is the *before-the-fact* negotiation state machine. Additive —
+/// MeetingStatus is untouched.
+///
+/// No real Google Calendar/Meet API integration exists or is attempted here (see
+/// README "Google Meet / Calendar" and docs/architecture-decisions.md): `meetLink`
+/// is a manually pasted, backend-validated URL (see meeting-link.ts), never
+/// auto-created. `scheduledAt`, when present, is a real UTC DateTime (Prisma's
+/// default) — only display-side timezone formatting is attempted (each viewer's
+/// own ConnectionPreference.timezone), no cross-timezone conversion logic.
+model MeetingProposal {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   Connection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  status       MeetingProposalStatus @default(PROPOSED)
+
+  proposedByUserId String
+  proposedBy       User   @relation("MeetingProposalProposedBy", fields: [proposedByUserId], references: [id], onDelete: Cascade)
+
+  /// Who accepted/declined/countered this specific proposal, and when. Null while
+  /// still PROPOSED (open).
+  respondedByUserId String?
+  respondedBy       User?     @relation("MeetingProposalRespondedBy", fields: [respondedByUserId], references: [id])
+  respondedAt       DateTime?
+
+  /// The kind of session this meeting is meant to cover — INTRO_VIDEO_CALL is the
+  /// common "preferred first step" case (see ConnectionRoom.tsx's
+  /// INTRO_SESSION_TYPE), but any ConnectionReason is allowed.
+  sessionType ConnectionReason?
+
+  /// Manually pasted, backend-validated Google Meet URL. Nullable — a proposal can
+  /// exist before a link is attached (see service.ts#attachMeetLink).
+  meetLink String?
+
+  /// Optional proposed meeting time. Real UTC DateTime; see the model-level doc
+  /// comment on timezone handling.
+  scheduledAt DateTime?
+
+  /// Set only on the new row created by a counter-proposal, pointing back at the
+  /// proposal it supersedes — lets the UI/tests reconstruct the negotiation
+  /// history. Null for a fresh (non-counter) proposal.
+  previousProposalId String?          @unique
+  previousProposal   MeetingProposal? @relation("MeetingProposalChain", fields: [previousProposalId], references: [id])
+  supersededBy       MeetingProposal? @relation("MeetingProposalChain")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([connectionId, createdAt])
+  @@map("meeting_proposals")
 }
 
 enum ReportCategory {
