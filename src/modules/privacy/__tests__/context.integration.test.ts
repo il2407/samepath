@@ -51,7 +51,7 @@ describe("checkPrivacy — real database round trip", () => {
     expect(audit?.reasonCode).toBe("same_company");
   });
 
-  it("rejects subsidiaries of the same corporate group", async () => {
+  it("allows subsidiaries of the same corporate group — corporate-group blocking was removed (backlog item 6)", async () => {
     const group = await prisma.corporateGroup.create({ data: { name: "MegaCorp Group" } });
     const parent = await createTestCompany("MegaCorp", group.id);
     const subsidiary = await createTestCompany("MegaCorp Israel", group.id);
@@ -59,7 +59,7 @@ describe("checkPrivacy — real database round trip", () => {
     const b = await createTestUser({ companyId: subsidiary.id, companyConfirmed: true });
 
     const result = await checkPrivacy(a.user.id, b.user.id, { context: "MATCH" });
-    expect(result).toEqual({ allowed: false, reasonCode: "corporate_group_conflict" });
+    expect(result).toEqual({ allowed: true });
   });
 
   it("rejects when a company is blocked, in either direction", async () => {

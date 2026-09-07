@@ -3,6 +3,17 @@ import { prisma } from "@/shared/db";
 import { evaluatePrivacy, type EligibilityProfile, type PrivacyCheckResult } from "@/modules/privacy/engine";
 import type { PrivacyAuditContext } from "@/generated/prisma/client";
 
+/**
+ * `currentCompanyCorporateGroupId`/`blockEntireCorporateGroup` are still
+ * loaded here even though `evaluatePrivacy()` no longer reads them
+ * (corporate-group blocking was removed — backlog item 6, see
+ * privacy/engine.ts). Left in place deliberately, matching this codebase's
+ * own don't-remove-things-you-don't-have-to convention: it's one extra,
+ * already-indexed join field, costs nothing to keep loading, and leaves the
+ * door open for a future feature to read `EligibilityProfile` without
+ * re-wiring this loader. If that door never gets used, trimming these two
+ * fields is a safe, no-migration future cleanup — not required now.
+ */
 export async function loadEligibilityProfile(userId: string): Promise<EligibilityProfile | null> {
   const [user, profile] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId } }),

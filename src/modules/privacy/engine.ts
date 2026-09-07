@@ -160,16 +160,16 @@ export function evaluatePrivacy(input: PrivacyCheckInput): PrivacyCheckResult {
     return { allowed: false, reasonCode: "same_company" };
   }
 
-  const subjectGroup = subject.currentCompanyConfirmed ? subject.currentCompanyCorporateGroupId : null;
-  const candidateGroup = candidate.currentCompanyConfirmed ? candidate.currentCompanyCorporateGroupId : null;
-  if (
-    subjectGroup &&
-    candidateGroup &&
-    subjectGroup === candidateGroup &&
-    (subject.blockEntireCorporateGroup || candidate.blockEntireCorporateGroup)
-  ) {
-    return { allowed: false, reasonCode: "corporate_group_conflict" };
-  }
+  // Corporate-group blocking removed (backlog item 6) — a subsidiary/parent
+  // of a same-company match is no longer rejected on that basis alone.
+  // `currentCompanyCorporateGroupId`/`blockEntireCorporateGroup` are kept on
+  // EligibilityProfile (see context.ts) per this codebase's own
+  // don't-remove-things-you-don't-have-to convention, but nothing in this
+  // function reads them anymore. `PrivacyRejectionReason`'s
+  // "corporate_group_conflict" member is kept for the same reason — an
+  // unused union member costs nothing and avoids the (small) risk of a
+  // still-serialized old PrivacyDecisionAudit row referencing a reason code
+  // that no longer type-checks anywhere.
 
   if (
     (candidateCompany && subject.blockedCompanyIds.includes(candidateCompany)) ||

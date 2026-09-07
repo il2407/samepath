@@ -108,7 +108,17 @@ describe("evaluatePrivacy — each hard filter wins even when everything else is
     expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
   });
 
-  it("rejects subsidiaries of the same corporate group when group-blocking is on", () => {
+  // Corporate-group blocking was removed (backlog item 6) — subsidiaries/
+  // parents of a same-company match are no longer rejected on that basis
+  // alone. The two tests that used to live here ("rejects subsidiaries of
+  // the same corporate group when group-blocking is on" and "group-blocking
+  // is a safe default") are superseded by the two tests immediately below,
+  // which assert the new (opposite) behavior: different companies in the
+  // same corporate group are now allowed, with or without
+  // blockEntireCorporateGroup set — since evaluatePrivacy never reads that
+  // field anymore.
+
+  it("allows different companies in the same corporate group — corporate-group blocking was removed (backlog item 6)", () => {
     const subject = profile({
       userId: "subject",
       currentCompanyId: "co-1",
@@ -121,32 +131,25 @@ describe("evaluatePrivacy — each hard filter wins even when everything else is
       currentCompanyId: "co-2",
       currentCompanyConfirmed: true,
       currentCompanyCorporateGroupId: "group-x",
+      blockEntireCorporateGroup: true,
     });
-    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({
-      allowed: false,
-      reasonCode: "corporate_group_conflict",
-    });
+    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
   });
 
-  it("group-blocking is a safe default: either side wanting it is enough to reject", () => {
-    const subject = profile({
-      userId: "subject",
-      currentCompanyId: "co-1",
-      currentCompanyConfirmed: true,
-      currentCompanyCorporateGroupId: "group-x",
-      blockEntireCorporateGroup: false,
-    });
-    const candidate = profile({
-      userId: "candidate",
-      currentCompanyId: "co-2",
-      currentCompanyConfirmed: true,
-      currentCompanyCorporateGroupId: "group-x",
-      blockEntireCorporateGroup: true,
-    });
-    expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({
-      allowed: false,
-      reasonCode: "corporate_group_conflict",
-    });
+  it("blockEntireCorporateGroup has no effect on the outcome, in any combination", () => {
+    const base = { currentCompanyId: "co-1", currentCompanyConfirmed: true, currentCompanyCorporateGroupId: "group-x" };
+    for (const subjectFlag of [true, false]) {
+      for (const candidateFlag of [true, false]) {
+        const subject = profile({ userId: "subject", ...base, blockEntireCorporateGroup: subjectFlag });
+        const candidate = profile({
+          userId: "candidate",
+          ...base,
+          currentCompanyId: "co-2",
+          blockEntireCorporateGroup: candidateFlag,
+        });
+        expect(evaluatePrivacy(input({ subject, candidate }))).toEqual({ allowed: true });
+      }
+    }
   });
 
   it("does not reject different companies in different corporate groups", () => {
