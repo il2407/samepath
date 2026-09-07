@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
 import { saveProfileStepOne, type ProfileStepOneInput } from "@/modules/profiles/service";
-import { uploadResume, confirmResumeDraft, discardResumeUpload } from "@/modules/resumes/service";
+import { uploadResume, confirmResumeDraft, discardResumeUpload, retryResumeExtraction } from "@/modules/resumes/service";
 import { rateLimit } from "@/shared/rate-limit";
 
 export type ActionState = { ok: boolean; error?: string };
@@ -67,6 +67,24 @@ export async function confirmResumeDraftAction(input: unknown): Promise<ActionSt
 
   revalidatePath("/app", "layout");
   redirect("/app/onboarding/privacy");
+}
+
+/** Re-runs extraction against the already-stored file for a previously failed job — see resumes/service.ts's retryResumeExtraction for why this doesn't need a fresh upload. */
+export async function retryResumeExtractionAction(uploadId: string): Promise<ActionState> {
+  const user = await requireUser();
+
+  // Re-running extraction is comparable in cost to a fresh upload (same
+  // parsing work), so it shares the upload rate-limit bucket rather than
+  // getting its own unlimited allowance.
+  const limited = rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
+  if (!limited.allowed) return { ok: false, error: "יותר מדי נסיונות. נסו שוב בעוד כשעה" };
+
+  const result = await retryResumeExtraction(user.id, uploadId);
+  if (!result.ok) return result;
+
+  revalidatePath("/app/onboarding/profile");
+  revalidatePath("/app/settings/profile");
+  return { ok: true };
 }
 
 export async function discardResumeDraftAction(uploadId: string): Promise<ActionState> {

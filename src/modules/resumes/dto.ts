@@ -19,6 +19,14 @@ export interface StoredExtractedResumeData {
   currentRoleTitleGuess: string | null;
   matchedTagIds: string[];
   matchedLanguageIds: string[];
+  /** Target-role labels found verbatim in the resume text (see deterministic-parser.ts) — the profile form allows selecting more than one. */
+  matchedTargetRoleIds: string[];
+  /** Derived from the first entry of matchedTargetRoleIds (a target role always belongs to exactly one professional field) — null when no target role matched, never a guessed default field. */
+  professionalFieldIdGuess: string | null;
+  /** At most one match — the profile form's region field is a single-select. Null when no known region label appears in the text. */
+  matchedRegionId: string | null;
+  /** A heuristic one-sentence "short intro" draft (see deterministic-parser.ts's extractShortIntroGuess) — null, never a fabricated sentence, when no summary/about section was confidently found. */
+  shortIntroGuess: string | null;
 }
 
 function pad2(n: number): string {
