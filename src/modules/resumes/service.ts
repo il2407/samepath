@@ -2,8 +2,8 @@ import "server-only";
 import { prisma } from "@/shared/db";
 import { getStorage, generateResumeStorageKey } from "@/shared/storage";
 import { getMalwareScanner } from "@/modules/resumes/malware-scan";
-import { extractText, PDF_MIME_TYPE, DOCX_MIME_TYPE } from "@/modules/resumes/text-extraction";
-import { parseResumeText } from "@/modules/resumes/deterministic-parser";
+import { extractText, looksLikeEmptyTextLayer, PDF_MIME_TYPE, DOCX_MIME_TYPE } from "@/modules/resumes/text-extraction";
+import { getResumeParser } from "@/modules/resumes/parser";
 import { toMonthString, type StoredExtractedResumeData } from "@/modules/resumes/dto";
 import { resolveOrCreateCompanyByRawName } from "@/modules/companies/service";
 import type { Prisma, ResumeUploadStatus } from "@/generated/prisma/client";
@@ -64,21 +64,38 @@ export async function uploadResume(userId: string, file: UploadedFile): Promise<
 }
 
 async function runExtractionJob(resumeUploadId: string, userId: string, buffer: Buffer, mimeType: string): Promise<void> {
-  const job = await prisma.resumeExtractionJob.create({ data: { resumeUploadId, status: "QUEUED" } });
-  await prisma.resumeExtractionJob.update({
-    where: { id: job.id },
-    data: { status: "RUNNING", startedAt: new Date(), attempt: 1 },
+  // resumeUploadId is unique on this table (one job per upload), so a retry
+  // of a previously FAILED job must re-use that row rather than create a
+  // second one — upsert makes both "first run" and "retry" safe in one call.
+  // `attempt` (already in the schema) increments on retry rather than
+  // resetting, so it stays a true count of how many times this upload's
+  // extraction has actually run.
+  const job = await prisma.resumeExtractionJob.upsert({
+    where: { resumeUploadId },
+    create: { resumeUploadId, status: "RUNNING", startedAt: new Date(), attempt: 1 },
+    update: { status: "RUNNING", startedAt: new Date(), finishedAt: null, error: null, attempt: { increment: 1 } },
   });
 
   try {
     const text = await extractText(buffer, mimeType);
 
-    const [tags, languages] = await Promise.all([
+    // A scanned/image-only PDF has no text layer at all — pdf-parse can't
+    // OCR it, so it returns empty/near-empty text instead of throwing. Fail
+    // the job with a recognizable error tag so getResumeStatusForUser can
+    // tell the user something more useful than a generic "extraction
+    // failed" (see text-extraction.ts and docs/resume-extraction-approach.md).
+    if (looksLikeEmptyTextLayer(text)) {
+      throw new Error("EMPTY_TEXT_LAYER: no extractable text found (likely a scanned/image-only file)");
+    }
+
+    const [tags, languages, targetRoles, regions] = await Promise.all([
       prisma.tag.findMany({ where: { isActive: true, kind: { in: ["SKILL", "DOMAIN"] } }, select: { id: true, labelHe: true, labelEn: true } }),
       prisma.language.findMany({ select: { id: true, labelHe: true, labelEn: true } }),
+      prisma.targetRole.findMany({ where: { isActive: true }, select: { id: true, labelHe: true, labelEn: true, professionalFieldId: true } }),
+      prisma.region.findMany({ select: { id: true, labelHe: true, labelEn: true } }),
     ]);
 
-    const parsed = parseResumeText(text, tags, languages);
+    const parsed = await getResumeParser().parse(text, { knownTags: tags, knownLanguages: languages, knownTargetRoles: targetRoles, knownRegions: regions });
 
     const positions = await Promise.all(
       parsed.positions.map(async (p) => {
@@ -95,11 +112,24 @@ async function runExtractionJob(resumeUploadId: string, userId: string, buffer: 
       }),
     );
 
+    // A target role always belongs to exactly one professional field, so
+    // the first matched role's field is a safe (never-guessed-if-empty)
+    // stand-in for "which professional field is this resume for" — a field
+    // the deterministic parser otherwise has no reliable way to infer.
+    const professionalFieldIdGuess =
+      parsed.matchedTargetRoleIds.length > 0
+        ? (targetRoles.find((r) => r.id === parsed.matchedTargetRoleIds[0])?.professionalFieldId ?? null)
+        : null;
+
     const draftData: StoredExtractedResumeData = {
       positions,
       currentRoleTitleGuess: parsed.currentRoleTitleGuess,
       matchedTagIds: parsed.matchedTagIds,
       matchedLanguageIds: parsed.matchedLanguageIds,
+      matchedTargetRoleIds: parsed.matchedTargetRoleIds,
+      professionalFieldIdGuess,
+      matchedRegionId: parsed.matchedRegionId,
+      shortIntroGuess: parsed.shortIntroGuess,
     };
 
     await prisma.$transaction([
@@ -122,11 +152,15 @@ async function runExtractionJob(resumeUploadId: string, userId: string, buffer: 
   }
 }
 
+export type ExtractionFailureReason = "EMPTY_TEXT" | "OTHER";
+
 export interface ResumeStatusView {
   uploadId: string;
   originalFilename: string;
   status: ResumeUploadStatus;
   extractionFailed: boolean;
+  /** Only meaningful when extractionFailed is true. "EMPTY_TEXT" (likely a scanned/image-only file — see text-extraction.ts's looksLikeEmptyTextLayer) gets a specific, more useful Hebrew message than the generic "extraction failed" case, and retrying against the same file is pointless (there is no text there to find). */
+  extractionFailureReason: ExtractionFailureReason | null;
   draft: { extracted: StoredExtractedResumeData } | null;
 }
 
@@ -144,14 +178,51 @@ export async function getResumeStatusForUser(userId: string): Promise<ResumeStat
   // confirmed, the upload moves to DELETED, and a draft attached to it must
   // stop resurfacing even though the draft row itself still exists.
   const hasUnconfirmedDraft = Boolean(draft && !draft.confirmedAt && upload.status === "READY");
+  const extractionFailed = upload.extractionJob?.status === "FAILED";
 
   return {
     uploadId: upload.id,
     originalFilename: upload.originalFilename,
     status: upload.status,
-    extractionFailed: upload.extractionJob?.status === "FAILED",
+    extractionFailed,
+    extractionFailureReason: !extractionFailed
+      ? null
+      : upload.extractionJob?.error?.startsWith("EMPTY_TEXT_LAYER")
+        ? "EMPTY_TEXT"
+        : "OTHER",
     draft: hasUnconfirmedDraft ? { extracted: draft!.extractedJson as unknown as StoredExtractedResumeData } : null,
   };
+}
+
+export type RetryExtractionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Re-runs extraction against the already-stored file for a previously
+ * failed job, without requiring the user to re-select and re-upload the
+ * same file (§14: retry state for the extraction pipeline). Only valid
+ * while the original upload is still READY and its file still exists in
+ * storage — both true for a job that failed extraction (the file is only
+ * ever deleted at confirm time or on discard, neither of which happened
+ * here). Deliberately not offered for an EMPTY_TEXT_LAYER failure by the
+ * caller UI: retrying against a file with no text layer at all would fail
+ * identically every time.
+ */
+export async function retryResumeExtraction(userId: string, uploadId: string): Promise<RetryExtractionResult> {
+  const upload = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: uploadId } });
+  if (upload.userId !== userId) throw new Error("not your upload");
+  if (upload.status !== "READY") {
+    return { ok: false, error: "לא ניתן לנסות שוב עבור קובץ זה — יש להעלות קובץ חדש" };
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = await getStorage().get(upload.storageKey);
+  } catch {
+    return { ok: false, error: "הקובץ המקורי כבר לא זמין — יש להעלות קובץ חדש" };
+  }
+
+  await runExtractionJob(uploadId, userId, buffer, upload.mimeType);
+  return { ok: true };
 }
 
 /**

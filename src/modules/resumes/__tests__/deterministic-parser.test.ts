@@ -12,6 +12,16 @@ const languageLabels: KnownLabel[] = [
   { id: "lang-en", labelHe: "אנגלית", labelEn: "English" },
 ];
 
+const targetRoleLabels: KnownLabel[] = [
+  { id: "role-backend", labelHe: "מפתח/ת Backend", labelEn: "Backend Developer" },
+  { id: "role-frontend", labelHe: "מפתח/ת Frontend", labelEn: "Frontend Developer" },
+];
+
+const regionLabels: KnownLabel[] = [
+  { id: "region-center", labelHe: "מרכז", labelEn: "Center" },
+  { id: "region-north", labelHe: "צפון", labelEn: "North" },
+];
+
 describe("parseResumeText", () => {
   it("extracts a position with an explicit month/year range", () => {
     const text = "Acme Corp - Backend Developer\n01/2020 - 05/2022";
@@ -108,5 +118,81 @@ describe("parseResumeText", () => {
     const text = "No relevant technologies mentioned here.";
     const result = parseResumeText(text, skillLabels, []);
     expect(result.matchedTagIds).toEqual([]);
+  });
+
+  it("matches known target-role labels by Hebrew or English label", () => {
+    const text = "Experienced Backend Developer looking for new opportunities.";
+    const result = parseResumeText(text, [], [], targetRoleLabels, []);
+    expect(result.matchedTargetRoleIds).toEqual(["role-backend"]);
+  });
+
+  it("returns an empty array of matched target roles when none appear in the text", () => {
+    const text = "A resume with no recognizable target-role labels.";
+    const result = parseResumeText(text, [], [], targetRoleLabels, []);
+    expect(result.matchedTargetRoleIds).toEqual([]);
+  });
+
+  it("matches at most one region — the first known label found, since region is a single-select field", () => {
+    const text = "גר במרכז הארץ, עבד גם בצפון.";
+    const result = parseResumeText(text, [], [], [], regionLabels);
+    expect(result.matchedRegionId).toBe("region-center");
+  });
+
+  it("returns null for matchedRegionId when no known region label appears in the text", () => {
+    const text = "No location mentioned anywhere in this text.";
+    const result = parseResumeText(text, [], [], [], regionLabels);
+    expect(result.matchedRegionId).toBeNull();
+  });
+
+  it("drafts a short-intro guess from the line right after a recognized summary heading", () => {
+    const text = ["Summary", "Backend engineer with 5 years of experience building real-time systems.", "Experience", "Acme - Dev\n2020-2022"].join(
+      "\n",
+    );
+    const result = parseResumeText(text, [], []);
+    expect(result.shortIntroGuess).toBe("Backend engineer with 5 years of experience building real-time systems.");
+  });
+
+  it("recognizes a Hebrew summary heading (תקציר) the same way", () => {
+    const text = ["תקציר", "מפתח/ת Backend עם ניסיון במערכות בזמן אמת."].join("\n");
+    const result = parseResumeText(text, [], []);
+    expect(result.shortIntroGuess).toBe("מפתח/ת Backend עם ניסיון במערכות בזמן אמת.");
+  });
+
+  it("returns null for shortIntroGuess when no summary/about heading is found", () => {
+    const text = "Acme Corp - Backend Developer\n01/2020 - Present";
+    const result = parseResumeText(text, [], []);
+    expect(result.shortIntroGuess).toBeNull();
+  });
+
+  it("returns null for shortIntroGuess when the heading has no following content", () => {
+    const text = "Summary";
+    const result = parseResumeText(text, [], []);
+    expect(result.shortIntroGuess).toBeNull();
+  });
+
+  it("returns null for shortIntroGuess when the line after the heading is too short to be real content", () => {
+    const text = ["About", "N/A"].join("\n");
+    const result = parseResumeText(text, [], []);
+    expect(result.shortIntroGuess).toBeNull();
+  });
+
+  it("is robust to decomposed-form (NFD) Hebrew text when matching labels", () => {
+    // A base letter followed by a separate combining diacritic (as some PDF
+    // generators emit Hebrew) renders identically to the precomposed form
+    // but is a different sequence of code points until NFC-normalized.
+    const decomposed = "טייפסקריפט".normalize("NFD");
+    const result = parseResumeText(decomposed, skillLabels, []);
+    expect(result.matchedTagIds).toEqual(["skill-ts"]);
+  });
+
+  it("never crashes on malformed/adversarial input and always returns a well-formed result", () => {
+    const inputs = ["", "\n\n\n", "  ", "a".repeat(10_000), "-".repeat(500)];
+    for (const input of inputs) {
+      const result = parseResumeText(input, skillLabels, languageLabels, targetRoleLabels, regionLabels);
+      expect(Array.isArray(result.positions)).toBe(true);
+      expect(Array.isArray(result.matchedTagIds)).toBe(true);
+      expect(Array.isArray(result.matchedLanguageIds)).toBe(true);
+      expect(Array.isArray(result.matchedTargetRoleIds)).toBe(true);
+    }
   });
 });

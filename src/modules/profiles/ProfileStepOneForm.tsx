@@ -346,6 +346,7 @@ function ChipToggle({ label, active, onClick }: { label: string; active: boolean
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
         "rounded-full border px-4 py-2 text-sm transition-colors",

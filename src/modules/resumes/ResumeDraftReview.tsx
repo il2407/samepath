@@ -66,6 +66,8 @@ export function ResumeDraftReview({
       </p>
       {discardError && <p className="mt-2 text-sm text-danger">{discardError}</p>}
 
+      <ExtractionSummary initial={initial} />
+
       <div className="mt-4 rounded-xl bg-paper p-3">
         <label className="flex items-center gap-2 text-sm text-ink">
           <input type="checkbox" checked={keepFile} onChange={(e) => setKeepFile(e.target.checked)} />
@@ -86,6 +88,53 @@ export function ResumeDraftReview({
           submitLabel="אישור ושמירת הפרופיל"
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * A best-effort extraction is only trustworthy if it's honest about its own
+ * gaps (§10/§11 — never present a "nothing found" field as if it were a
+ * confident answer, and let the user tell the two apart at a glance). This
+ * doesn't touch ProfileStepOneForm's own fields — it's a plain summary
+ * banner above the form, listing what the parser actually found in the file
+ * versus what it found no signal for and left for manual entry.
+ */
+function ExtractionSummary({ initial }: { initial: ProfileStepOneInitialData }) {
+  const found: string[] = [];
+  const missing: string[] = [];
+
+  if (initial.currentCompany) found.push("חברה נוכחית ותאריך התחלה");
+  else missing.push("חברה נוכחית");
+
+  if (initial.previousPositions.length > 0) found.push(`${initial.previousPositions.length} תפקידים קודמים`);
+  if (initial.targetRoleIds.length > 0) found.push("תפקיד/י יעד מוצעים");
+  else missing.push("תפקיד/י יעד");
+
+  if (initial.tagIds.length > 0) found.push(`${initial.tagIds.length} כישורים/תחומים`);
+  if (initial.languageIds.length > 0) found.push(`${initial.languageIds.length} שפות`);
+  if (initial.regionId) found.push("אזור מגורים");
+  else missing.push("אזור מגורים");
+
+  if (initial.shortIntro) found.push("טיוטת היכרות קצרה");
+  else missing.push("היכרות קצרה");
+
+  if (found.length === 0 && missing.length === 0) return null;
+
+  return (
+    <div className="mt-4 space-y-1 rounded-xl border border-border bg-paper p-3 text-sm">
+      {found.length > 0 && (
+        <p className="text-ink">
+          <span className="font-medium text-happy-dark">זיהינו אוטומטית מהקובץ: </span>
+          {found.join(" · ")} — כדאי לוודא שהכול נכון לפני האישור.
+        </p>
+      )}
+      {missing.length > 0 && (
+        <p className="text-muted">
+          <span className="font-medium">לא זוהה אוטומטית, יש להשלים ידנית: </span>
+          {missing.join(" · ")}
+        </p>
+      )}
     </div>
   );
 }

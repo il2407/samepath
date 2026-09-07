@@ -194,7 +194,6 @@ describe("completePrivacyOnboarding", () => {
         sharePreciseLocationPostMatch: false,
         shareEmailPostMatch: false,
         sharePhonePostMatch: false,
-        resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
       }),
     ).rejects.toThrow();
 
@@ -232,7 +231,6 @@ describe("completePrivacyOnboarding", () => {
       sharePreciseLocationPostMatch: false,
       shareEmailPostMatch: false,
       sharePhonePostMatch: false,
-      resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
@@ -250,6 +248,48 @@ describe("completePrivacyOnboarding", () => {
 
     const confirmations = await prisma.userConfirmation.findMany({ where: { userId: user.id } });
     expect(confirmations.map((c) => c.type).sort()).toEqual(["EMPLOYER_CONFIRMED", "PRIVACY_ONBOARDING_CONFIRMED"]);
+  });
+
+  it("does not touch resumeRetentionPreference (the duplicated onboarding control was removed — see PrivacyStepForm.tsx / PrivacyStepInput)", async () => {
+    const { field, role, region } = await seedRefs();
+    const company = await prisma.company.create({ data: { canonicalName: "Acme" } });
+    const user = await prisma.user.create({ data: { email: "no-resume-retention@example.com" } });
+
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      languageIds: [],
+      positions: [
+        { companyId: company.id, companyRaw: "Acme", title: "Engineer", startDate: new Date("2021-01-01"), endDate: null, isCurrent: true },
+      ],
+    });
+    // Simulate a resume-draft confirmation having already set a non-default
+    // preference before onboarding reaches the privacy step (the real
+    // in-context decision — see resumes/service.ts's confirmResumeDraft).
+    await prisma.professionalProfile.update({ where: { userId: user.id }, data: { resumeRetentionPreference: "KEEP" } });
+
+    await completePrivacyOnboarding(user.id, {
+      employerConfirmed: true,
+      blockEntireCorporateGroup: true,
+      additionalBlockedCompanies: [],
+      shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      shareLinkedInPostMatch: false,
+      sharePreciseLocationPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
+    });
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
+    // Onboarding no longer collects or writes this field at all — it must
+    // survive completePrivacyOnboarding untouched, not get silently reset
+    // to the schema default.
+    expect(profile.resumeRetentionPreference).toBe("KEEP");
   });
 });
 
@@ -280,7 +320,6 @@ describe("updatePrivacySettings", () => {
       sharePreciseLocationPostMatch: false,
       shareEmailPostMatch: false,
       sharePhonePostMatch: false,
-      resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
     });
     await prisma.professionalProfile.update({ where: { userId: user.id }, data: { status: "ACTIVE" } });
 
@@ -367,7 +406,6 @@ describe("completeConnectionPreferences", () => {
       sharePreciseLocationPostMatch: false,
       shareEmailPostMatch: false,
       sharePhonePostMatch: false,
-      resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
     });
 
     expect(await getOnboardingStep(user.id)).toBe("preferences");
@@ -425,7 +463,6 @@ describe("getOnboardingStep", () => {
       sharePreciseLocationPostMatch: false,
       shareEmailPostMatch: false,
       sharePhonePostMatch: false,
-      resumeRetentionPreference: "DELETE_AFTER_CONFIRMATION",
     });
     expect(await getOnboardingStep(user.id)).toBe("preferences");
 

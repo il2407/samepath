@@ -43,6 +43,26 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
   await page.waitForURL(/\/app\/onboarding\/privacy/);
   await expect(page.getByText(companyName)).toBeVisible();
 
+  // Back-navigation regression check: the "back to edit profile" link used
+  // to be a dead end — saveProfileStepOne moves ProfessionalProfile.status
+  // off DRAFT the moment step 1 is first saved, so the profile page's own
+  // forward guard would immediately redirect straight back here (see
+  // AGENTS.md / the WS1 backlog item on this). Clicking it must land back
+  // on step 1 with previously-entered values pre-filled, not loop back to
+  // this page.
+  await page.getByRole("link", { name: "זה לא נכון — חזרה לעריכת הפרופיל" }).click();
+  await page.waitForURL(/\/app\/onboarding\/profile\?edit=true/);
+  await expect(page.locator("#currentRoleTitle")).toHaveValue("מהנדס/ת Backend");
+  await expect(page.getByPlaceholder("שם החברה הנוכחית")).toHaveValue(companyName);
+
+  // Continuing forward again from the re-edit must not lose or duplicate
+  // data, and must not silently re-trigger unrelated side effects (the
+  // employer didn't change, so re-confirmation stays required exactly once,
+  // same as the first time through).
+  await page.getByRole("button", { name: "שמירה והמשך" }).click();
+  await page.waitForURL(/\/app\/onboarding\/privacy/);
+  await expect(page.getByText(companyName)).toBeVisible();
+
   await page.getByRole("checkbox", { name: "כן, זהו המעסיק הנוכחי שלי" }).check();
 
   await page.getByRole("button", { name: "המשך להעדפות חיבור" }).click();

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { uploadResumeAction } from "@/modules/resumes/actions";
+import { uploadResumeAction, retryResumeExtractionAction } from "@/modules/resumes/actions";
+import type { ExtractionFailureReason } from "@/modules/resumes/service";
 import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 
 /**
@@ -15,16 +16,41 @@ import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
  */
 const UPLOAD_STAGE_LABELS = ["מעלה את הקובץ…", "סורק את הקובץ…", "מחלץ פרטים רלוונטיים…"];
 
-export function ResumeUploadCard({ extractionFailed }: { extractionFailed: boolean }) {
+export function ResumeUploadCard({
+  extractionFailed,
+  extractionFailureReason = null,
+  failedUploadId,
+}: {
+  extractionFailed: boolean;
+  /** Which kind of failure — lets the message and the retry option be specific instead of generic. Optional for backward compatibility with callers that haven't been updated to pass it. */
+  extractionFailureReason?: ExtractionFailureReason | null;
+  /** The upload to retry extraction against, when extractionFailed is true. Omitted (or extractionFailed false) hides the retry button. */
+  failedUploadId?: string;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const stageTimeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [pending, startTransition] = useTransition();
+  const [retrying, startRetryTransition] = useTransition();
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
 
   useEffect(() => () => stageTimeouts.current.forEach(clearTimeout), []);
+
+  function handleRetry() {
+    if (!failedUploadId) return;
+    setRetryError(null);
+    startRetryTransition(async () => {
+      const result = await retryResumeExtractionAction(failedUploadId);
+      if (!result.ok) {
+        setRetryError(result.error ?? "משהו השתבש");
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -70,9 +96,26 @@ export function ResumeUploadCard({ extractionFailed }: { extractionFailed: boole
         נחשפים לאף חברה או סוכנות.
       </p>
       {extractionFailed && (
-        <p className="mt-2 rounded-xl bg-warm-surface px-3 py-2 text-sm text-ink">
-          לא הצלחנו לחלץ מידע מהקובץ שהעליתם בפעם הקודמת. אפשר לנסות קובץ אחר, או למלא ידנית למטה.
-        </p>
+        <div className="mt-2 rounded-xl bg-warm-surface px-3 py-2 text-sm text-ink">
+          <p>
+            {extractionFailureReason === "EMPTY_TEXT"
+              ? "נראה שזהו קובץ סרוק (תמונה) ולא טקסט הניתן לקריאה — אי אפשר לחלץ ממנו מידע אוטומטית. אפשר להעלות קובץ שנוצר ישירות כטקסט (למשל ייצוא PDF מוורד), או למלא את הטופס ידנית למטה."
+              : "לא הצלחנו לחלץ מידע מהקובץ שהעליתם בפעם הקודמת. אפשר לנסות שוב, להעלות קובץ אחר, או למלא ידנית למטה."}
+          </p>
+          {/* Retrying the same file for an EMPTY_TEXT failure would fail identically every time — there's no text layer to find — so the retry option only makes sense for other, possibly-transient failures. */}
+          {failedUploadId && extractionFailureReason !== "EMPTY_TEXT" && (
+            <button
+              type="button"
+              disabled={retrying}
+              onClick={handleRetry}
+              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary-dark disabled:opacity-50"
+            >
+              {retrying && <Spinner />}
+              {retrying ? "מנסה שוב…" : "ניסיון חוזר לחילוץ מאותו הקובץ"}
+            </button>
+          )}
+          {retryError && <p className="mt-1 text-sm text-danger">{retryError}</p>}
+        </div>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <input ref={inputRef} type="file" accept=".pdf,.docx" onChange={handleFileSelected} className="hidden" />

@@ -37,10 +37,23 @@ test("upload a resume and confirm the pre-filled draft", async ({ page }) => {
   await expect(page.getByPlaceholder("שם החברה הנוכחית")).toHaveValue(companyName);
   await expect(page.locator("#currentRoleTitle")).toHaveValue("Senior Backend Developer");
 
+  // The seeded "Backend Developer" target role label matches this resume's
+  // "Senior Backend Developer" text verbatim, so the deterministic parser
+  // now pre-selects it (and the professional field chips filter to match) —
+  // see deterministic-parser.ts's target-role matching. Assert that instead
+  // of blindly clicking the first chip, which would otherwise toggle an
+  // already-selected role back off.
+  const backendRoleChip = page.getByRole("button", { name: "מפתח/ת Backend" });
+  await expect(backendRoleChip).toHaveAttribute("aria-pressed", "true");
+
   const roleChip = page.getByText("תפקיד/י יעד", { exact: false }).locator("..").getByRole("button").first();
-  await roleChip.click();
+  if ((await roleChip.getAttribute("aria-pressed")) !== "true") {
+    await roleChip.click();
+  }
   const languageChip = page.getByText("שפות", { exact: true }).locator("..").getByRole("button").first();
-  await languageChip.click();
+  if ((await languageChip.getAttribute("aria-pressed")) !== "true") {
+    await languageChip.click();
+  }
 
   await page.getByRole("button", { name: "אישור ושמירת הפרופיל" }).click();
 

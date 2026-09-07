@@ -164,7 +164,20 @@ export interface PrivacyStepInput {
   shareEmailPostMatch: boolean;
   sharePhonePostMatch: boolean;
   phoneNumber?: string;
-  resumeRetentionPreference: ResumeRetentionPreference;
+  // Deliberately no resumeRetentionPreference here (removed — see WS1
+  // backlog "duplicated résumé-retention controls"): the real decision for
+  // any résumé actually uploaded during this onboarding pass is made
+  // in-context at draft-confirmation time (ResumeDraftReview's "keep the
+  // file" checkbox -> confirmResumeDraft(userId, uploadId, keepFile) in
+  // resumes/service.ts), which already ran before a user ever reaches this
+  // step. A second, generic "for whenever you upload a resume in the
+  // future" control here was confusing (it also showed up for users who
+  // never uploaded one at all) and duplicated that decision days later with
+  // no new information. The equivalent *default preference for a future
+  // upload* still exists as its own, legitimate, standalone setting in
+  // account settings (PrivacySettingsForm / updatePrivacySettings below) —
+  // that one has a real purpose (there's no in-context draft-review moment
+  // to attach it to from Settings) and is intentionally untouched.
 }
 
 export async function completePrivacyOnboarding(userId: string, input: PrivacyStepInput): Promise<void> {
@@ -179,7 +192,6 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
       where: { id: profile.id },
       data: {
         currentCompanyConfirmedAt: new Date(),
-        resumeRetentionPreference: input.resumeRetentionPreference,
         status: "INCOMPLETE",
       },
     });
@@ -252,7 +264,14 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
 // writing UserConfirmation rows) — these are for the settings pages, not
 // first-time setup.
 
-export type PrivacySettingsInput = Omit<PrivacyStepInput, "employerConfirmed">;
+// Unlike PrivacyStepInput (onboarding), the settings page keeps
+// resumeRetentionPreference — see PrivacySettingsForm.tsx's own, separate
+// "future resume upload" section, explicitly preserved as-is (it's not a
+// duplicate of the onboarding control removed above; it's the only place
+// this preference is ever set once a user is past onboarding).
+export type PrivacySettingsInput = Omit<PrivacyStepInput, "employerConfirmed"> & {
+  resumeRetentionPreference: ResumeRetentionPreference;
+};
 
 export async function updatePrivacySettings(userId: string, input: PrivacySettingsInput): Promise<void> {
   const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
