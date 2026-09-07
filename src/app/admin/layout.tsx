@@ -6,6 +6,7 @@ import { Logo } from "@/shared/ui/Logo";
 
 const navItems = [
   { href: "/admin", label: "לוח בקרה" },
+  { href: "/admin/analytics", label: "אנליטיקה" },
   { href: "/admin/contributions", label: "מודרציית תרומות" },
   { href: "/admin/interview-library", label: "ספריית ראיונות" },
   { href: "/admin/reports", label: "דיווחים" },
