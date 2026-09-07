@@ -117,7 +117,11 @@ function AnonymousAvatar() {
         </svg>
       </div>
       <span className="absolute -bottom-0.5 -end-0.5 flex size-3.5 items-center justify-center rounded-full bg-white">
-        <span className="size-2 animate-pulse rounded-full bg-primary" />
+        {/* Tailwind's animate-pulse isn't reduced-motion-aware by default (unlike
+            the .animate-float keyframe in globals.css, which is scoped inside a
+            prefers-reduced-motion media query) — motion-reduce:animate-none closes
+            that gap for this continuously-looping decorative indicator. */}
+        <span className="size-2 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
       </span>
     </div>
   );
