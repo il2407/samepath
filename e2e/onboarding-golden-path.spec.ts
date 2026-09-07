@@ -44,7 +44,6 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
   await expect(page.getByText(companyName)).toBeVisible();
 
   await page.getByRole("checkbox", { name: "כן, זהו המעסיק הנוכחי שלי" }).check();
-  await page.getByPlaceholder('לדוגמה: "מ." או "מפתחת Backend"').fill("E.");
 
   await page.getByRole("button", { name: "המשך להעדפות חיבור" }).click();
 
