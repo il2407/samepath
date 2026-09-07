@@ -65,6 +65,20 @@ describe("evaluatePrivacy — each hard filter wins even when everything else is
     expect(result).toEqual({ allowed: false, reasonCode: "safety_restriction" });
   });
 
+  it("rejects a deleted candidate outright (backlog item 22 — deleted-account coverage)", () => {
+    const result = evaluatePrivacy(
+      input({ candidate: profile({ userId: "candidate", userStatus: "DELETED" }) }),
+    );
+    expect(result).toEqual({ allowed: false, reasonCode: "candidate_ineligible" });
+  });
+
+  it("rejects a deleted subject outright", () => {
+    const result = evaluatePrivacy(
+      input({ subject: profile({ userId: "subject", userStatus: "DELETED" }) }),
+    );
+    expect(result).toEqual({ allowed: false, reasonCode: "subject_ineligible" });
+  });
+
   it("rejects a paused candidate profile", () => {
     const result = evaluatePrivacy(
       input({ candidate: profile({ userId: "candidate", profileStatus: "PAUSED" }) }),

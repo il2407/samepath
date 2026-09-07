@@ -203,6 +203,13 @@ describe("getConnectionDetail / listConnectionsForUser — progressive disclosur
     expect(await getConnectionDetail(a.user.id, connection.id)).toBeNull();
   });
 
+  it("returns null when the other party's account has since been deleted (backlog item 22 — deleted-account coverage)", async () => {
+    const { a, b, connection } = await createTestConnection();
+    await prisma.user.update({ where: { id: b.user.id }, data: { status: "DELETED", deletedAt: new Date() } });
+
+    expect(await getConnectionDetail(a.user.id, connection.id)).toBeNull();
+  });
+
   it("listConnectionsForUser also falls back to the nickname when fullName is unset", async () => {
     const { a, connection } = await createTestConnection();
     const items = await listConnectionsForUser(a.user.id);
