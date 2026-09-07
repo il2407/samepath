@@ -49,10 +49,6 @@ export function PrivacyStepForm({
   const [fullName, setFullName] = useState("");
   const [sharePhoto, setSharePhoto] = useState(initialSharePhotoPostMatch);
 
-  const [resumeRetention, setResumeRetention] = useState<"DELETE_AFTER_CONFIRMATION" | "KEEP">(
-    "DELETE_AFTER_CONFIRMATION",
-  );
-
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -95,7 +91,6 @@ export function PrivacyStepForm({
         shareEmailPostMatch: shareEmail,
         sharePhonePostMatch: sharePhone,
         phoneNumber: sharePhone ? phoneNumber.trim() || undefined : undefined,
-        resumeRetentionPreference: resumeRetention,
       });
       if (result && !result.ok) setError(result.error ?? "משהו השתבש. נסו שוב");
     });
@@ -125,7 +120,15 @@ export function PrivacyStepForm({
           />
           כן, זהו המעסיק הנוכחי שלי
         </label>
-        <Link href="/app/onboarding/profile" className="inline-block text-sm text-primary hover:text-primary-dark">
+        {/* ?edit=true is required, not cosmetic — see OnboardingProfilePage's
+            isReEditing: saveProfileStepOne already moved the profile status
+            off DRAFT, so without this the page's own forward guard would
+            immediately redirect straight back here (a dead-end/redirect
+            loop). See the comment there for the full explanation. */}
+        <Link
+          href="/app/onboarding/profile?edit=true"
+          className="inline-block text-sm text-primary hover:text-primary-dark"
+        >
           זה לא נכון — חזרה לעריכת הפרופיל
         </Link>
       </section>
@@ -243,25 +246,6 @@ export function PrivacyStepForm({
               className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
             />
           )}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-semibold text-ink">שמירת קורות חיים</h2>
-        <p className="text-sm text-muted">רלוונטי רק אם תעלו קורות חיים בעתיד. כברירת מחדל הקובץ נמחק לאחר עיבוד ואישור.</p>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              checked={resumeRetention === "DELETE_AFTER_CONFIRMATION"}
-              onChange={() => setResumeRetention("DELETE_AFTER_CONFIRMATION")}
-            />
-            למחוק אחרי עיבוד
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={resumeRetention === "KEEP"} onChange={() => setResumeRetention("KEEP")} />
-            לשמור
-          </label>
         </div>
       </section>
 

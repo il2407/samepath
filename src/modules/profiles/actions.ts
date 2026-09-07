@@ -78,7 +78,9 @@ const privacyStepSchema = z
     shareEmailPostMatch: z.boolean(),
     sharePhonePostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
-    resumeRetentionPreference: z.enum(["DELETE_AFTER_CONFIRMATION", "KEEP"]),
+    // No resumeRetentionPreference here — see the comment on
+    // PrivacyStepInput in profiles/service.ts for why the onboarding step no
+    // longer collects this (the duplicated résumé-retention controls fix).
   })
   .refine((data) => data.employerConfirmed, {
     message: "יש לאשר את המעסיק הנוכחי כדי להמשיך",
