@@ -9,9 +9,10 @@ import {
   type SafeReason,
   type ScoreBreakdown,
 } from "@/modules/matching/scoring";
-import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
-import { toPreMatchDTO, type PreMatchCandidateDTO } from "@/modules/profiles/dto";
+import { loadRawProfileForDto, loadViewerShareCompanyPreMatch } from "@/modules/profiles/dto-loader";
+import { toPreMatchDTO, toMidStageDTO, type PreMatchCandidateDTO, type MidStageCandidateDTO } from "@/modules/profiles/dto";
 import { generateFriendlyNickname } from "@/modules/profiles/nickname";
+import { getAccessStatus } from "@/modules/access-passes/service";
 import { createConnectionFromMatch } from "@/modules/connections/service";
 import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
 import type { MatchDecisionType, MatchStatus } from "@/generated/prisma/client";
@@ -30,6 +31,19 @@ const NON_TERMINAL_STATUSES: MatchStatus[] = [
   "ACCESS_CHECK",
 ];
 const VISIBLE_STATUSES: MatchStatus[] = ["PROPOSED", "INTERESTED_BY_A", "INTERESTED_BY_B"];
+/**
+ * The "mid-stage" of progressive disclosure (backlog item 9): both sides
+ * already said INTERESTED, but a real Connection doesn't exist yet either
+ * because the access-pass gate hasn't cleared (ACCESS_CHECK) or, more
+ * transiently, because resolveAccessGateAndActivate hasn't run yet
+ * (MUTUALLY_ACCEPTED — normally resolves to ACCESS_CHECK or ACTIVE in the
+ * same call, so this status is rarely observed at rest, but is included
+ * here for completeness/robustness). Before this backlog item, nothing in
+ * the UI ever queried these statuses — a match stuck in ACCESS_CHECK simply
+ * vanished from the visible list with no explanation. See
+ * getMidStageMatchesForUser below.
+ */
+const MID_STAGE_STATUSES: MatchStatus[] = ["MUTUALLY_ACCEPTED", "ACCESS_CHECK"];
 
 /**
  * Whether both sides of a mutual match have the access needed to open a
@@ -159,6 +173,11 @@ export async function getActiveSuggestionsForUser(userId: string): Promise<Sugge
     orderBy: [{ scoreBreakdown: { totalScore: "desc" } }, { createdAt: "desc" }],
   });
 
+  // The viewer's own reciprocal-visibility consent (backlog item 8) — loaded
+  // once per call, not per-candidate, since it's the same person viewing
+  // every suggestion in this list.
+  const viewerShareCompanyPreMatch = await loadViewerShareCompanyPreMatch(userId);
+
   const result: SuggestionView[] = [];
   for (const suggestion of suggestions) {
     const candidateUserId = suggestion.userAId === userId ? suggestion.userBId : suggestion.userAId;
@@ -185,13 +204,86 @@ export async function getActiveSuggestionsForUser(userId: string): Promise<Sugge
 
     result.push({
       id: suggestion.id,
-      candidate: toPreMatchDTO(raw),
+      candidate: toPreMatchDTO(raw, viewerShareCompanyPreMatch),
       codeName: generateFriendlyNickname(suggestion.id),
       matchPercentage: suggestion.scoreBreakdown ? Math.round(suggestion.scoreBreakdown.totalScore * 100) : 0,
       reasons: suggestion.scoreBreakdown ? generateSafeReasons(suggestion.scoreBreakdown) : [],
       status: suggestion.status,
       myDecision,
       waitingOnOther: myDecision === "INTERESTED" && otherDecision === null,
+    });
+  }
+  return result;
+}
+
+export interface MidStageMatchView {
+  id: string;
+  candidate: MidStageCandidateDTO;
+  /** Fallback identity when candidate.firstName is null — same anonymous persona as the pre-match card, seeded from the same suggestion id so it stays stable across the transition. */
+  codeName: string;
+  matchPercentage: number;
+  status: Extract<MatchStatus, "MUTUALLY_ACCEPTED" | "ACCESS_CHECK">;
+  /**
+   * Only meaningful when status is ACCESS_CHECK: true when it's specifically
+   * THIS user (not the other side) who still needs to activate/purchase an
+   * access pass before the connection can open. Lets the UI say "it's on
+   * you" vs. "waiting on the other person" instead of one generic message.
+   */
+  viewerNeedsAccessPass: boolean;
+}
+
+/**
+ * Surfaces the "middle stage" of progressive disclosure (backlog item 9):
+ * matches where both sides already said INTERESTED but no real Connection
+ * exists yet (MatchStatus MUTUALLY_ACCEPTED/ACCESS_CHECK). Before this
+ * function existed, reaching this state was a UI dead end — the suggestion
+ * disappeared from getActiveSuggestionsForUser's list (VISIBLE_STATUSES
+ * doesn't include these two) and nothing told the user why. Wired up on
+ * /app/matches, directly below the pre-match suggestion list.
+ *
+ * Re-checks privacy fresh, exactly like getActiveSuggestionsForUser, since
+ * eligibility can change at any time and this is a real, if narrow, gap in
+ * time before a Connection (and its own independent privacy re-check in
+ * connections/service.ts) exists.
+ */
+export async function getMidStageMatchesForUser(userId: string): Promise<MidStageMatchView[]> {
+  const suggestions = await prisma.matchSuggestion.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }], status: { in: MID_STAGE_STATUSES } },
+    include: { scoreBreakdown: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (suggestions.length === 0) return [];
+
+  const viewerShareCompanyPreMatch = await loadViewerShareCompanyPreMatch(userId);
+  const viewerAccessStatus = await getAccessStatus(userId);
+  const viewerNeedsAccessPass = !viewerAccessStatus.hasActivePass && !viewerAccessStatus.pendingPass;
+
+  const result: MidStageMatchView[] = [];
+  for (const suggestion of suggestions) {
+    const candidateUserId = suggestion.userAId === userId ? suggestion.userBId : suggestion.userAId;
+
+    const privacyResult = await checkPrivacy(userId, candidateUserId, {
+      context: "MATCH",
+      contextId: suggestion.id,
+    });
+    if (!privacyResult.allowed) {
+      await prisma.matchSuggestion.update({
+        where: { id: suggestion.id },
+        data: { status: "BLOCKED", decidedAt: new Date() },
+      });
+      continue;
+    }
+
+    const raw = await loadRawProfileForDto(candidateUserId);
+    if (!raw) continue;
+
+    result.push({
+      id: suggestion.id,
+      candidate: toMidStageDTO(raw, viewerShareCompanyPreMatch),
+      codeName: generateFriendlyNickname(suggestion.id),
+      matchPercentage: suggestion.scoreBreakdown ? Math.round(suggestion.scoreBreakdown.totalScore * 100) : 0,
+      status: suggestion.status as "MUTUALLY_ACCEPTED" | "ACCESS_CHECK",
+      viewerNeedsAccessPass: suggestion.status === "ACCESS_CHECK" && viewerNeedsAccessPass,
     });
   }
   return result;
