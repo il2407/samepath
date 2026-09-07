@@ -4,10 +4,16 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
 import {
+  acceptMeetingProposal,
+  attachMeetLink,
   blockFromConnection,
   clearConnectionGuide,
+  counterProposeMeeting,
+  declineMeetingProposal,
   endConnection,
   markMeeting,
+  MeetingProposalError,
+  proposeMeeting,
   reportConnection,
   selectConnectionGuide,
   sendMessage,
@@ -156,5 +162,129 @@ export async function setMySessionTypesAction(input: unknown): Promise<ActionSta
     return { ok: true };
   } catch {
     return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Meeting proposals (WS7, backlog item 14)
+// ---------------------------------------------------------------------------
+
+/**
+ * Only a deliberate MeetingProposalError's message is ever surfaced to the
+ * user (duplicate-open-proposal, self-accept, invalid link, etc. — the
+ * service layer already writes those as clear, user-facing Hebrew text).
+ * Anything else — a raw Prisma/db error, for instance — falls back to the
+ * same generic message every other action in this file uses, and is logged
+ * server-side instead: an internal error's real message (which can include
+ * bundler-mangled internals, e.g. "relation meeting_proposals does not
+ * exist" pre-migration) must never render verbatim in the UI. See
+ * MeetingProposalError's doc comment in service.ts for how this was caught.
+ */
+function meetingProposalErrorMessage(error: unknown): string {
+  if (error instanceof MeetingProposalError) return error.message;
+  console.error("meeting proposal action failed", error);
+  return "משהו השתבש. נסו שוב";
+}
+
+const meetLinkField = z.string().trim().max(500).optional();
+const scheduledAtField = z.coerce.date().optional();
+
+const proposeMeetingSchema = z.object({
+  connectionId: z.string().min(1),
+  sessionType: connectionReasonEnum.optional(),
+  meetLink: meetLinkField,
+  scheduledAt: scheduledAtField,
+});
+
+export async function proposeMeetingAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = proposeMeetingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await proposeMeeting(user.id, parsed.data.connectionId, {
+      sessionType: parsed.data.sessionType as ConnectionReason | undefined,
+      meetLink: parsed.data.meetLink,
+      scheduledAt: parsed.data.scheduledAt,
+    });
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+const respondToProposalSchema = z.object({
+  connectionId: z.string().min(1),
+  proposalId: z.string().min(1),
+});
+
+export async function acceptMeetingProposalAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = respondToProposalSchema.extend({ meetLink: meetLinkField }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await acceptMeetingProposal(user.id, parsed.data.connectionId, parsed.data.proposalId, { meetLink: parsed.data.meetLink });
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+export async function declineMeetingProposalAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = respondToProposalSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await declineMeetingProposal(user.id, parsed.data.connectionId, parsed.data.proposalId);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+const counterProposeMeetingSchema = respondToProposalSchema.extend({
+  sessionType: connectionReasonEnum.optional(),
+  meetLink: meetLinkField,
+  scheduledAt: scheduledAtField,
+});
+
+export async function counterProposeMeetingAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = counterProposeMeetingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await counterProposeMeeting(user.id, parsed.data.connectionId, parsed.data.proposalId, {
+      sessionType: parsed.data.sessionType as ConnectionReason | undefined,
+      meetLink: parsed.data.meetLink,
+      scheduledAt: parsed.data.scheduledAt,
+    });
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+const attachMeetLinkSchema = respondToProposalSchema.extend({
+  meetLink: z.string().trim().min(1).max(500),
+});
+
+export async function attachMeetLinkAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = attachMeetLinkSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await attachMeetLink(user.id, parsed.data.connectionId, parsed.data.proposalId, parsed.data.meetLink);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
   }
 }
