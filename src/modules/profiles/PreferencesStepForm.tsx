@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
@@ -15,6 +16,7 @@ type Reason =
   | "ACCOUNTABILITY"
   | "PROFESSIONAL_DISCUSSION"
   | "LEARNING_TOGETHER"
+  | "INTRO_VIDEO_CALL"
   | "CODING_PRACTICE"
   | "SYSTEM_DESIGN"
   | "INTERVIEW_SIMULATION"
@@ -46,16 +48,44 @@ const timeBlocks = [
   { key: "evening", label: "ערב", startMinute: 1020, endMinute: 1320 },
 ] as const;
 
-export function PreferencesStepForm({ languages }: { languages: { id: string; labelHe: string }[] }) {
-  const [minYears, setMinYears] = useState(0);
-  const [maxYears, setMaxYears] = useState(15);
-  const [format, setFormat] = useState<Format>("BOTH");
-  const [cadence, setCadence] = useState<Cadence>("BOTH");
-  const [mode, setMode] = useState<Mode>("ONLINE");
-  const [genderPreference, setGenderPreference] = useState<GenderPreference>("BOTH");
-  const [languageId, setLanguageId] = useState<string>(languages[0]?.id ?? "");
-  const [reasons, setReasons] = useState<Reason[]>(["SHARE_JOB_SEARCH"]);
-  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
+export interface PreferencesStepInitial {
+  peerMinExperienceMonths: number;
+  peerMaxExperienceMonths: number;
+  format: Format;
+  cadence: Cadence;
+  mode: Mode;
+  genderPreference: GenderPreference;
+  languageId: string | null;
+  reasons: Reason[];
+  availability: { dayOfWeek: number; startMinute: number; endMinute: number }[];
+}
+
+export function PreferencesStepForm({
+  languages,
+  initial,
+  submitLabel,
+}: {
+  languages: { id: string; labelHe: string }[];
+  /** When re-editing an already-completed preferences step (?edit=true), pre-fills the form from saved data. */
+  initial?: PreferencesStepInitial;
+  submitLabel?: string;
+}) {
+  const [minYears, setMinYears] = useState(initial ? initial.peerMinExperienceMonths / 12 : 0);
+  const [maxYears, setMaxYears] = useState(initial ? initial.peerMaxExperienceMonths / 12 : 15);
+  const [format, setFormat] = useState<Format>(initial?.format ?? "BOTH");
+  const [cadence, setCadence] = useState<Cadence>(initial?.cadence ?? "BOTH");
+  const [mode, setMode] = useState<Mode>(initial?.mode ?? "ONLINE");
+  const [genderPreference, setGenderPreference] = useState<GenderPreference>(initial?.genderPreference ?? "BOTH");
+  const [languageId, setLanguageId] = useState<string>(initial?.languageId ?? languages[0]?.id ?? "");
+  const [reasons, setReasons] = useState<Reason[]>(initial?.reasons ?? ["SHARE_JOB_SEARCH"]);
+  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    for (const slot of initial?.availability ?? []) {
+      const block = timeBlocks.find((b) => b.startMinute === slot.startMinute && b.endMinute === slot.endMinute);
+      if (block) set.add(`${slot.dayOfWeek}-${block.key}`);
+    }
+    return set;
+  });
 
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -104,6 +134,10 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+      <Link href="/app/onboarding/privacy?edit=true" className="inline-block text-sm text-primary hover:text-primary-dark">
+        חזרה לעריכת הגדרות הפרטיות
+      </Link>
+
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">טווח ניסיון של עמיתים מתאימים</h2>
         <div className="flex items-center gap-3">
@@ -242,7 +276,7 @@ export function PreferencesStepForm({ languages }: { languages: { id: string; la
       {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-        {pending ? "מפעיל…" : "הפעלת הפרופיל"}
+        {pending ? "שומר…" : (submitLabel ?? "המשך לסקירה")}
       </Button>
     </form>
   );

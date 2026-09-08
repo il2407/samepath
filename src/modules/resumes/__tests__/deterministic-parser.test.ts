@@ -64,6 +64,56 @@ describe("parseResumeText", () => {
     expect(result.positions[0]).toMatchObject({ startYear: 2018, startMonth: 1, endYear: 2020, endMonth: 1 });
   });
 
+  it("parses a Hebrew textual month/year range", () => {
+    const text = "Acme Corp - Backend Developer\nינואר 2020 - מרץ 2022";
+    const result = parseResumeText(text, [], []);
+    expect(result.positions[0]).toMatchObject({
+      companyRaw: "Acme Corp",
+      title: "Backend Developer",
+      startYear: 2020,
+      startMonth: 1,
+      endYear: 2022,
+      endMonth: 3,
+      isCurrent: false,
+    });
+  });
+
+  it("parses an English textual month/year range, both full names and abbreviations", () => {
+    const full = parseResumeText("Acme Corp - Backend Developer\nJanuary 2020 - March 2022", [], []);
+    expect(full.positions[0]).toMatchObject({ startYear: 2020, startMonth: 1, endYear: 2022, endMonth: 3 });
+
+    const abbrev = parseResumeText("Acme Corp - Backend Developer\nJan 2020 - Mar 2022", [], []);
+    expect(abbrev.positions[0]).toMatchObject({ startYear: 2020, startMonth: 1, endYear: 2022, endMonth: 3 });
+  });
+
+  it('accepts a comma between a textual month and year (e.g. "January, 2020")', () => {
+    const text = "Acme Corp - Backend Developer\nJanuary, 2020 - Present";
+    const result = parseResumeText(text, [], []);
+    expect(result.positions[0]).toMatchObject({ startYear: 2020, startMonth: 1, isCurrent: true });
+  });
+
+  it("does not mistake a Hebrew textual month name for the company name (regression)", () => {
+    // Before the textual-month fix, RANGE_RE could only match the "2020 -
+    // כיום" portion of this date line (no digits at the start of "ינואר" for
+    // it to latch onto), leaving "ינואר" behind as an unmatched remainder
+    // that extractPositions then misread as the company name.
+    const text = "Acme Corp - Backend Developer\nינואר 2020 - כיום";
+    const result = parseResumeText(text, [], []);
+    expect(result.positions[0]).toMatchObject({
+      companyRaw: "Acme Corp",
+      title: "Backend Developer",
+      startYear: 2020,
+      startMonth: 1,
+      isCurrent: true,
+    });
+  });
+
+  it("does not mistake an English textual month name for the company name (regression)", () => {
+    const text = "Acme Corp - Backend Developer\nJanuary 2020 - Present";
+    const result = parseResumeText(text, [], []);
+    expect(result.positions[0]).toMatchObject({ companyRaw: "Acme Corp", title: "Backend Developer", isCurrent: true });
+  });
+
   it("uses the previous non-empty line as context when the date line has nothing else on it", () => {
     const text = "Globex Inc - Frontend Developer\n\n01/2019 - 12/2019";
     const result = parseResumeText(text, [], []);

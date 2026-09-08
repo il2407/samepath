@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
 import { prisma } from "@/shared/db";
 import {
+  activateProfile,
   completeConnectionPreferences,
   completePrivacyOnboarding,
   getOnboardingStep,
@@ -417,7 +418,7 @@ describe("completeConnectionPreferences", () => {
     ).rejects.toThrow();
   });
 
-  it("activates the profile once preferences are saved", async () => {
+  it("saves the connection preferences but leaves activation to activateProfile", async () => {
     const { field, role, region, language } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "g@example.com" } });
     await saveProfileStepOne(user.id, {
@@ -456,15 +457,21 @@ describe("completeConnectionPreferences", () => {
       where: { userId: user.id },
       include: { connectionPreference: true, availabilitySlots: true },
     });
-    expect(profile.status).toBe("ACTIVE");
+    expect(profile.status).not.toBe("ACTIVE");
     expect(profile.connectionPreference?.reasons).toEqual(["SHARE_JOB_SEARCH", "ACCOUNTABILITY"]);
     expect(profile.availabilitySlots).toHaveLength(1);
+    expect(await getOnboardingStep(user.id)).toBe("overview");
+
+    await activateProfile(user.id);
+
+    const activated = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(activated.status).toBe("ACTIVE");
     expect(await getOnboardingStep(user.id)).toBe("done");
   });
 });
 
 describe("getOnboardingStep", () => {
-  it("walks profile -> privacy -> preferences -> done as steps complete", async () => {
+  it("walks profile -> privacy -> preferences -> overview -> done as steps complete", async () => {
     const { field, role, region, language } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "h@example.com" } });
 
@@ -502,6 +509,9 @@ describe("getOnboardingStep", () => {
       reasons: [],
       availability: [],
     });
+    expect(await getOnboardingStep(user.id)).toBe("overview");
+
+    await activateProfile(user.id);
     expect(await getOnboardingStep(user.id)).toBe("done");
   });
 });

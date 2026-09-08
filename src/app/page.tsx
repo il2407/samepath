@@ -40,9 +40,8 @@ export default function LandingPage() {
       <main>
         <Hero />
         <WhySamePath />
-        <HowItWorks />
         <Privacy />
-        <Pricing />
+        <HowItWorks />
         <Testimonials />
         <Faq />
         <FinalCta />

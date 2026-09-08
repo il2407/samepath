@@ -34,6 +34,7 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
   if (!isReEditing) {
     if (step === "privacy") redirect("/app/onboarding/privacy");
     if (step === "preferences") redirect("/app/onboarding/preferences");
+    if (step === "overview") redirect("/app/onboarding/overview");
     if (step === "done") redirect("/app");
   }
 

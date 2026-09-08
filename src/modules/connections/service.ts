@@ -4,10 +4,12 @@ import { checkPrivacy } from "@/modules/privacy/context";
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
 import { toPostMatchDTO, type PostMatchCandidateDTO } from "@/modules/profiles/dto";
 import { generateFriendlyNickname } from "@/modules/profiles/nickname";
-import { getRandomGuideForCategory, type PracticeSessionCategorySlug } from "@/modules/guides/service";
+import { getRandomGuideForCategory, listGuidesForCategory, type PracticeSessionCategorySlug } from "@/modules/guides/service";
 import { getStorage } from "@/shared/storage";
 import { validateMeetLink } from "@/modules/connections/meeting-link";
-import type { ConnectionReason } from "@/generated/prisma/client";
+import { getGoogleMeetClient } from "@/modules/auth/google-meet";
+import { decryptSecret, encryptSecret } from "@/modules/auth/crypto";
+import type { ConnectionReason, IntroMeetingStance } from "@/generated/prisma/client";
 
 /**
  * Reads the actual photo bytes back out of storage as a data URL — never
@@ -104,6 +106,9 @@ export interface ConnectionDetail {
   /** What each side wants out of this specific connection's session(s) — independent, no agreement required. */
   mySessionTypes: string[];
   otherPartySessionTypes: string[];
+  /** Each side's independent, informational-only stance on whether a video intro meeting is a prerequisite for them — null means no stance declared yet. Never technically enforced; see IntroRequirementBanner in ConnectionRoom.tsx. */
+  myIntroStance: IntroMeetingStance | null;
+  otherPartyIntroStance: IntroMeetingStance | null;
 }
 
 export interface MeetingProposalDetail {
@@ -128,6 +133,7 @@ export async function getConnectionDetail(userId: string, connectionId: string):
       meetingStatuses: { orderBy: { createdAt: "desc" } },
       selectedGuide: { include: { steps: { orderBy: { order: "asc" } } } },
       sessionTypeSelections: true,
+      introRequirements: true,
     },
   });
   if (!connection) return null;
@@ -183,6 +189,8 @@ export async function getConnectionDetail(userId: string, connectionId: string):
       : null,
     mySessionTypes: connection.sessionTypeSelections.find((s) => s.userId === userId)?.sessionTypes ?? [],
     otherPartySessionTypes: connection.sessionTypeSelections.find((s) => s.userId === otherUserId)?.sessionTypes ?? [],
+    myIntroStance: connection.introRequirements.find((r) => r.userId === userId)?.stance ?? null,
+    otherPartyIntroStance: connection.introRequirements.find((r) => r.userId === otherUserId)?.stance ?? null,
   };
 }
 
@@ -197,6 +205,13 @@ export async function suggestGuideForConnection(userId: string, connectionId: st
   const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
   assertParticipant(connection, userId);
   return getRandomGuideForCategory(category);
+}
+
+/** Lists every published guide in a category so a connection's participants can browse and pick a specific one, instead of only getting a random pick. */
+export async function listGuideOptionsForConnection(userId: string, connectionId: string, category: PracticeSessionCategorySlug) {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+  return listGuidesForCategory(category);
 }
 
 /** Either participant can pick (or change) the suggested structure — it's shared, visible to both, never mandatory. */
@@ -224,6 +239,17 @@ export async function setMySessionTypes(userId: string, connectionId: string, se
     where: { connectionId_userId: { connectionId, userId } },
     update: { sessionTypes },
     create: { connectionId, userId, sessionTypes },
+  });
+}
+
+/** Each participant independently declares whether a video intro meeting is, for them, a prerequisite before continuing. Purely informational — visible to the other side, never technically enforced (no locking, no status change); a mismatch is surfaced as a UI banner only. */
+export async function setMyIntroRequirement(userId: string, connectionId: string, stance: IntroMeetingStance): Promise<void> {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+  await prisma.connectionIntroRequirement.upsert({
+    where: { connectionId_userId: { connectionId, userId } },
+    update: { stance },
+    create: { connectionId, userId, stance },
   });
 }
 
@@ -469,6 +495,80 @@ export async function attachMeetLink(userId: string, connectionId: string, propo
 
   const validated = normalizeMeetLink(meetLink);
   if (!validated) throw new MeetingProposalError("יש להזין קישור תקין");
+
+  await prisma.meetingProposal.update({ where: { id: proposalId }, data: { meetLink: validated } });
+}
+
+/** Whether the user has already connected their Google account for Meet-link generation — used by the page to decide between a "connect Google" CTA and a "generate link" button. */
+export async function hasGoogleMeetGrant(userId: string): Promise<boolean> {
+  const grant = await prisma.googleMeetGrant.findUnique({ where: { userId } });
+  return grant !== null;
+}
+
+/** Persists (or replaces) a user's Google Meet grant after a successful incremental-consent exchange. Tokens are encrypted at rest — see crypto.ts's encryptSecret. */
+export async function upsertGoogleMeetGrant(
+  userId: string,
+  tokens: { refreshToken: string; accessToken: string; accessTokenExpiresAt: Date; scope: string },
+): Promise<void> {
+  const data = {
+    refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
+    accessTokenEncrypted: encryptSecret(tokens.accessToken),
+    accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+    scope: tokens.scope,
+  };
+  await prisma.googleMeetGrant.upsert({
+    where: { userId },
+    update: data,
+    create: { userId, ...data },
+  });
+}
+
+/** Returns a valid (non-expired) access token for the user's Google Meet grant, refreshing and persisting it first if it's missing or within a minute of expiry. Null if the user has no grant, or if the refresh itself fails (e.g. a revoked grant). */
+async function getValidGoogleMeetAccessToken(userId: string): Promise<string | null> {
+  const grant = await prisma.googleMeetGrant.findUnique({ where: { userId } });
+  if (!grant) return null;
+
+  const needsRefresh =
+    !grant.accessTokenEncrypted || !grant.accessTokenExpiresAt || grant.accessTokenExpiresAt.getTime() - Date.now() < 60 * 1000;
+  if (!needsRefresh && grant.accessTokenEncrypted) {
+    return decryptSecret(grant.accessTokenEncrypted);
+  }
+
+  const refreshToken = decryptSecret(grant.refreshTokenEncrypted);
+  const refreshed = await getGoogleMeetClient().refreshAccessToken(refreshToken);
+  if (!refreshed) return null;
+
+  await prisma.googleMeetGrant.update({
+    where: { userId },
+    data: {
+      accessTokenEncrypted: encryptSecret(refreshed.accessToken),
+      accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
+    },
+  });
+  return refreshed.accessToken;
+}
+
+/**
+ * Generates a real Google Meet link (via Meet API v2's spaces.create, using
+ * the calling user's own Google Meet grant) and attaches it to the given
+ * proposal — the API-driven counterpart to attachMeetLink's manual-paste
+ * path. Any connection participant may call this, same as attachMeetLink.
+ */
+export async function generateMeetLink(userId: string, connectionId: string, proposalId: string): Promise<void> {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+
+  const proposal = await prisma.meetingProposal.findUniqueOrThrow({ where: { id: proposalId } });
+  if (proposal.connectionId !== connectionId) throw new MeetingProposalError("ההצעה אינה שייכת לחיבור הזה");
+
+  const accessToken = await getValidGoogleMeetAccessToken(userId);
+  if (!accessToken) throw new MeetingProposalError("יש להתחבר תחילה לחשבון Google כדי ליצור קישור");
+
+  const meetLink = await getGoogleMeetClient().createSpace(accessToken);
+  if (!meetLink) throw new MeetingProposalError("יצירת קישור הפגישה נכשלה, נסו שוב");
+
+  const validated = normalizeMeetLink(meetLink);
+  if (!validated) throw new MeetingProposalError("יצירת קישור הפגישה נכשלה, נסו שוב");
 
   await prisma.meetingProposal.update({ where: { id: proposalId }, data: { meetLink: validated } });
 }

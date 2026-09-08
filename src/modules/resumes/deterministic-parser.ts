@@ -42,10 +42,72 @@ const MAX_MATCHED_LANGUAGES = 6;
 const MAX_MATCHED_TARGET_ROLES = 4;
 const MIN_SHORT_INTRO_LENGTH = 15;
 
+// Textual month names a resume might use instead of a numeric "MM/YYYY" date
+// (e.g. "ינואר 2020" or "January 2020"/"Jan 2020"). Without recognizing
+// these, the date-range regex below only matched the year portion of such a
+// line, leaving the month name behind as unmatched text that the
+// company/title heuristics then misread as the company name (or title) —
+// the root cause of the "resume month mistaken for a company name" bug.
+const HE_MONTH_NUMBERS: Record<string, number> = {
+  ינואר: 1,
+  פברואר: 2,
+  מרץ: 3,
+  מרס: 3,
+  אפריל: 4,
+  מאי: 5,
+  יוני: 6,
+  יולי: 7,
+  אוגוסט: 8,
+  ספטמבר: 9,
+  אוקטובר: 10,
+  נובמבר: 11,
+  דצמבר: 12,
+};
+
+const EN_MONTH_NUMBERS: Record<string, number> = {
+  january: 1,
+  jan: 1,
+  february: 2,
+  feb: 2,
+  march: 3,
+  mar: 3,
+  april: 4,
+  apr: 4,
+  may: 5,
+  june: 6,
+  jun: 6,
+  july: 7,
+  jul: 7,
+  august: 8,
+  aug: 8,
+  september: 9,
+  sept: 9,
+  sep: 9,
+  october: 10,
+  oct: 10,
+  november: 11,
+  nov: 11,
+  december: 12,
+  dec: 12,
+};
+
+const MONTH_NAME_TO_NUMBER: Record<string, number> = { ...HE_MONTH_NUMBERS, ...EN_MONTH_NUMBERS };
+
+// Longest names first (e.g. "september" before "sep") purely so the common
+// case matches without the regex engine needing to backtrack into a shorter
+// alternative — correctness doesn't depend on this order, since a shorter
+// prefix match that can't be followed by a year would already cause
+// backtracking into the next alternative regardless.
+const MONTH_NAME_PATTERN = Object.keys(MONTH_NAME_TO_NUMBER)
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+
 const MONTH_YEAR = String.raw`\d{1,2}[./]\d{4}`;
+const TEXT_MONTH_YEAR = `(?:${MONTH_NAME_PATTERN})[\\s,]+\\d{4}`;
+const TEXT_MONTH_YEAR_RE = new RegExp(`^(${MONTH_NAME_PATTERN})[\\s,]+(\\d{4})$`, "i");
 const YEAR_ONLY = String.raw`\d{4}`;
 const PRESENT_WORD = String.raw`הווה|כיום|present|current|now`;
-const DATE_TOKEN = `(?:${MONTH_YEAR}|${YEAR_ONLY})`;
+const DATE_TOKEN = `(?:${TEXT_MONTH_YEAR}|${MONTH_YEAR}|${YEAR_ONLY})`;
 
 const RANGE_RE = new RegExp(`(${DATE_TOKEN})\\s*[-–—]\\s*(${DATE_TOKEN}|${PRESENT_WORD})`, "i");
 
@@ -54,6 +116,13 @@ const SEPARATORS = [" – ", " — ", " - ", " | ", " @ ", " אצל ", " ב-"];
 function parseDateToken(token: string): { year: number; month: number } {
   const monthYear = token.match(/^(\d{1,2})[./](\d{4})$/);
   if (monthYear) return { month: Math.min(12, Math.max(1, Number(monthYear[1]))), year: Number(monthYear[2]) };
+
+  const textMonthYear = token.match(TEXT_MONTH_YEAR_RE);
+  if (textMonthYear) {
+    const month = MONTH_NAME_TO_NUMBER[textMonthYear[1].toLowerCase()] ?? 1;
+    return { month, year: Number(textMonthYear[2]) };
+  }
+
   return { month: 1, year: Number(token) };
 }
 

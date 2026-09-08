@@ -10,6 +10,17 @@ const envSchema = z.object({
     .string()
     .min(32, "SESSION_SECRET must be at least 32 characters (use a random hex string)"),
 
+  // Key material for encrypting stored Google OAuth refresh tokens at rest
+  // (see src/modules/auth/crypto.ts#encryptSecret) — separate from
+  // SESSION_SECRET since it protects a different class of secret and needs
+  // to stay stable even if SESSION_SECRET is ever rotated (rotating it would
+  // strand every stored refresh token, forcing every user to reconnect).
+  GOOGLE_TOKEN_ENCRYPTION_KEY: z
+    .string()
+    .min(32, "GOOGLE_TOKEN_ENCRYPTION_KEY must be at least 32 characters (use a random hex string)")
+    .optional()
+    .default("dev-only-insecure-google-token-encryption-key-change-me"),
+
   MAIL_ADAPTER: z.enum(["console", "smtp"]).default("console"),
   SMTP_HOST: z.string().optional().default(""),
   SMTP_PORT: z.coerce.number().optional().default(587),

@@ -10,6 +10,8 @@ import type { User } from "@/generated/prisma/client";
 export const SESSION_COOKIE = "samepath_session";
 export const PENDING_VERIFICATION_COOKIE = "samepath_pending_verification";
 export const OAUTH_STATE_COOKIE = "samepath_oauth_state";
+export const GOOGLE_MEET_OAUTH_STATE_COOKIE = "samepath_google_meet_oauth_state";
+const GOOGLE_MEET_RETURN_TO_COOKIE = "samepath_google_meet_return_to";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // refresh once <7 days remain
@@ -146,4 +148,46 @@ export async function getOAuthStateCookie(): Promise<string | null> {
 export async function clearOAuthStateCookie(): Promise<void> {
   const jar = await cookies();
   jar.delete(OAUTH_STATE_COOKIE);
+}
+
+/**
+ * Separate state cookie for the Google Meet incremental-consent flow
+ * (src/app/api/auth/google-meet/*) — kept distinct from OAUTH_STATE_COOKIE
+ * above so starting a "connect Google for meetings" flow can never collide
+ * with (or be silently overwritten by) an in-flight sign-in attempt, or
+ * vice versa.
+ */
+export async function setGoogleMeetOAuthStateCookie(state: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(GOOGLE_MEET_OAUTH_STATE_COOKIE, state, cookieOptions(15 * 60));
+}
+
+export async function getGoogleMeetOAuthStateCookie(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(GOOGLE_MEET_OAUTH_STATE_COOKIE)?.value ?? null;
+}
+
+export async function clearGoogleMeetOAuthStateCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(GOOGLE_MEET_OAUTH_STATE_COOKIE);
+}
+
+/**
+ * Where to send the user back to after the Meet-consent redirect round trip
+ * (e.g. back to the connection room they started it from). Only ever set to
+ * an internal path by the start route, and re-validated on read there.
+ */
+export async function setGoogleMeetReturnToCookie(path: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(GOOGLE_MEET_RETURN_TO_COOKIE, path, cookieOptions(15 * 60));
+}
+
+export async function getGoogleMeetReturnToCookie(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(GOOGLE_MEET_RETURN_TO_COOKIE)?.value ?? null;
+}
+
+export async function clearGoogleMeetReturnToCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(GOOGLE_MEET_RETURN_TO_COOKIE);
 }

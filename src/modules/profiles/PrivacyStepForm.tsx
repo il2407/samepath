@@ -24,23 +24,39 @@ interface BlockedCompanyRow {
   note: string;
 }
 
+export interface PrivacyStepInitial {
+  employerConfirmed: boolean;
+  blockedCompanies: { company: CompanySelection; reason: BlockReason }[];
+  fullName: string;
+  shareCompanyPreMatch: boolean;
+  shareFullNamePostMatch: boolean;
+  phoneNumber: string;
+}
+
 export function PrivacyStepForm({
   currentCompanyName,
   currentPhotoDataUrl,
   initialSharePhotoPostMatch,
+  initial,
+  submitLabel,
 }: {
   currentCompanyName: string | null;
   currentPhotoDataUrl: string | null;
   initialSharePhotoPostMatch: boolean;
+  /** When re-editing an already-completed privacy step (?edit=true), pre-fills the form from saved data. */
+  initial?: PrivacyStepInitial;
+  submitLabel?: string;
 }) {
-  const [employerConfirmed, setEmployerConfirmed] = useState(false);
-  const [blocks, setBlocks] = useState<BlockedCompanyRow[]>([]);
+  const [employerConfirmed, setEmployerConfirmed] = useState(initial?.employerConfirmed ?? false);
+  const [blocks, setBlocks] = useState<BlockedCompanyRow[]>(
+    initial?.blockedCompanies.map((b) => ({ key: crypto.randomUUID(), company: b.company, reason: b.reason, note: "" })) ?? [],
+  );
 
-  const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(false);
+  const [shareCompanyPreMatch, setShareCompanyPreMatch] = useState(initial?.shareCompanyPreMatch ?? false);
 
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [shareFullName, setShareFullName] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState(initial?.phoneNumber ?? "");
+  const [shareFullName, setShareFullName] = useState(initial?.shareFullNamePostMatch ?? false);
+  const [fullName, setFullName] = useState(initial?.fullName ?? "");
   const [sharePhoto, setSharePhoto] = useState(initialSharePhotoPostMatch);
 
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +245,7 @@ export function PrivacyStepForm({
       {error && <p className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">{error}</p>}
 
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-        {pending ? "שומר…" : "המשך להעדפות חיבור"}
+        {pending ? "שומר…" : (submitLabel ?? "המשך להעדפות חיבור")}
       </Button>
     </form>
   );

@@ -17,13 +17,12 @@ export function Hero() {
             </Reveal>
             <Reveal delay={0.05}>
               <h1 className="mt-5 text-5xl leading-[1.06] font-black tracking-tight text-balance text-ink sm:text-6xl lg:text-[4rem]">
-                הראיון הוא אישי. ההכנה אליו לא חייבת להיות.
-              </h1>
+               במקום לדמיין איך ייראה ראיון העבודה הבא.
+תתרגלו אותו.              </h1>
             </Reveal>
             <Reveal delay={0.1}>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
-                מצאו פרטנרים מהתחום, ברמת ניסיון ובשלב דומים לשלכם, ותרגלו יחד בעזרת מערכים מוכנים —
-                בלי פרופיל ציבורי ובלי להיחשף לאנשים ממקום העבודה.
+              מצאו פרטנרים מהתחום, ברמת ניסיון ובשלב דומים לשלכם, ותרגלו יחד בעזרת מערכי סימולציות מוכנים. תהליך ההתאמה נעשה בדיסקרטיות, כך שרק אתם קובעים בפני מי להיחשף וממי להישאר מוסתרים.
               </p>
             </Reveal>
             <Reveal delay={0.2}>

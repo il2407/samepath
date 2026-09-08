@@ -150,6 +150,7 @@ model User {
   deletedAt       DateTime?
 
   authIdentities         AuthIdentity[]
+  googleMeetGrant        GoogleMeetGrant?
   sessions               Session[]
   emailVerifications     EmailVerification[]
   professionalProfile    ProfessionalProfile?
@@ -171,6 +172,7 @@ model User {
   sentMessages                ConnectionMessage[]
   meetingStatusesMarked       MeetingStatus[]
   sessionTypeSelections       ConnectionSessionTypeSelection[]
+  introRequirements           ConnectionIntroRequirement[]
   meetingProposalsMade        MeetingProposal[]                @relation("MeetingProposalProposedBy")
   meetingProposalsRespondedTo MeetingProposal[]                @relation("MeetingProposalRespondedBy")
 
@@ -222,6 +224,33 @@ model AuthIdentity {
   @@unique([provider, providerAccountId])
   @@index([userId])
   @@map("auth_identities")
+}
+
+/// A user's incremental-consent OAuth grant for the Google Meet API
+/// (`meetings.space.created` scope) — separate from AuthIdentity above,
+/// which only records sign-in identity and never requested this scope. One
+/// per user: granting again (re-consenting) overwrites the existing row
+/// rather than creating a second one, since only the latest grant is ever
+/// usable. `refreshTokenEncrypted` is stored via
+/// src/modules/auth/crypto.ts#encryptSecret (AES-256-GCM, reversible) since
+/// it must be decrypted later to redeem a refresh-grant call — unlike
+/// session tokens elsewhere, which only need one-way hashSecret comparison.
+/// `accessTokenEncrypted`/`accessTokenExpiresAt` cache the short-lived
+/// access token so most calls skip the refresh round-trip.
+model GoogleMeetGrant {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshTokenEncrypted String
+  accessTokenEncrypted  String?
+  accessTokenExpiresAt  DateTime?
+  scope                 String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("google_meet_grants")
 }
 
 model Session {
@@ -885,6 +914,7 @@ model Connection {
   meetingProposals      MeetingProposal[]
   reports               Report[]
   sessionTypeSelections ConnectionSessionTypeSelection[]
+  introRequirements     ConnectionIntroRequirement[]
 
   @@index([userAId, status])
   @@index([userBId, status])
@@ -906,6 +936,28 @@ model ConnectionSessionTypeSelection {
 
   @@unique([connectionId, userId])
   @@map("connection_session_type_selections")
+}
+
+enum IntroMeetingStance {
+  REQUIRED
+  NOT_REQUIRED
+}
+
+/// Each participant's independent declaration of whether a video intro
+/// meeting is a prerequisite for them before continuing this connection.
+/// Purely informational: on a mismatch (one REQUIRED, other NOT_REQUIRED)
+/// the UI shows a banner — nothing is technically locked or gated.
+model ConnectionIntroRequirement {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   Connection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stance       IntroMeetingStance
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([connectionId, userId])
+  @@map("connection_intro_requirements")
 }
 
 model ConnectionMessage {
@@ -960,12 +1012,15 @@ enum MeetingProposalStatus {
 /// MeetingProposal is the *before-the-fact* negotiation state machine. Additive —
 /// MeetingStatus is untouched.
 ///
-/// No real Google Calendar/Meet API integration exists or is attempted here (see
-/// README "Google Meet / Calendar" and docs/architecture-decisions.md): `meetLink`
-/// is a manually pasted, backend-validated URL (see meeting-link.ts), never
-/// auto-created. `scheduledAt`, when present, is a real UTC DateTime (Prisma's
-/// default) — only display-side timezone formatting is attempted (each viewer's
-/// own ConnectionPreference.timezone), no cross-timezone conversion logic.
+/// `meetLink` can be either a manually pasted, backend-validated URL (see
+/// meeting-link.ts) or a real Google Meet space generated on demand via the
+/// Google Meet API v2 (see src/modules/connections/google-meet.ts and
+/// GoogleMeetGrant above) — the latter deliberately uses the standalone
+/// `spaces.create` endpoint rather than the Calendar API's
+/// `conferenceData`, so generating a link never creates a Calendar event.
+/// `scheduledAt`, when present, is a real UTC DateTime (Prisma's default) —
+/// only display-side timezone formatting is attempted (each viewer's own
+/// ConnectionPreference.timezone), no cross-timezone conversion logic.
 model MeetingProposal {
   id           String                @id @default(cuid())
   connectionId String

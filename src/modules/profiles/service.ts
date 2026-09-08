@@ -380,7 +380,7 @@ export interface PreferencesStepInput {
 export async function completeConnectionPreferences(userId: string, input: PreferencesStepInput): Promise<void> {
   const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
   if (!profile.currentCompanyConfirmedAt) {
-    throw new Error("the current employer must be confirmed before the profile can be activated");
+    throw new Error("the current employer must be confirmed before preferences can be saved");
   }
 
   await prisma.$transaction(async (tx) => {
@@ -417,14 +417,57 @@ export async function completeConnectionPreferences(userId: string, input: Prefe
         data: input.availability.map((slot) => ({ profileId: profile.id, ...slot })),
       });
     }
-
-    await tx.professionalProfile.update({ where: { id: profile.id }, data: { status: "ACTIVE" } });
   });
+}
+
+/** Final onboarding step: activates the profile once the user has reviewed the overview page. */
+export async function activateProfile(userId: string): Promise<void> {
+  const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
+  if (!profile.currentCompanyConfirmedAt) {
+    throw new Error("the current employer must be confirmed before the profile can be activated");
+  }
+  const connectionPreference = await prisma.connectionPreference.findUnique({ where: { profileId: profile.id } });
+  if (!connectionPreference) {
+    throw new Error("connection preferences must be saved before the profile can be activated");
+  }
+
+  await prisma.professionalProfile.update({ where: { id: profile.id }, data: { status: "ACTIVE" } });
+}
+
+// --- Step 4: overview -----------------------------------------------------------------
+
+export async function getOnboardingOverviewData(userId: string) {
+  const profile = await prisma.professionalProfile.findUnique({
+    where: { userId },
+    include: {
+      professionalField: true,
+      targetRoles: { include: { targetRole: true } },
+      region: true,
+      tags: { include: { tag: true } },
+      languages: { include: { language: true } },
+      employmentPositions: {
+        include: { company: { select: { id: true, canonicalName: true } } },
+        orderBy: { startDate: "desc" },
+      },
+      currentCompany: { select: { id: true, canonicalName: true } },
+      disclosurePreference: true,
+      connectionPreference: { include: { language: true } },
+      availabilitySlots: true,
+    },
+  });
+  if (!profile) return null;
+
+  const blockedCompanies = await prisma.blockedCompany.findMany({
+    where: { userId },
+    include: { company: { select: { id: true, canonicalName: true } } },
+  });
+
+  return { profile, blockedCompanies };
 }
 
 // --- Onboarding progress -------------------------------------------------------------
 
-export type OnboardingStep = "profile" | "privacy" | "preferences" | "done";
+export type OnboardingStep = "profile" | "privacy" | "preferences" | "overview" | "done";
 
 export async function getOnboardingStep(userId: string): Promise<OnboardingStep> {
   const profile = await prisma.professionalProfile.findUnique({
@@ -433,7 +476,8 @@ export async function getOnboardingStep(userId: string): Promise<OnboardingStep>
   });
   if (!profile || profile.status === "DRAFT") return "profile";
   if (!profile.currentCompanyConfirmedAt) return "privacy";
-  if (!profile.connectionPreference || profile.status !== "ACTIVE") return "preferences";
+  if (!profile.connectionPreference) return "preferences";
+  if (profile.status !== "ACTIVE") return "overview";
   return "done";
 }
 

@@ -11,6 +11,7 @@ const stepPaths = {
   profile: "/app/onboarding/profile",
   privacy: "/app/onboarding/privacy",
   preferences: "/app/onboarding/preferences",
+  overview: "/app/onboarding/overview",
 } as const;
 
 export default async function AppHomePage() {

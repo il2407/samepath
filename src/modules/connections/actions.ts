@@ -11,12 +11,15 @@ import {
   counterProposeMeeting,
   declineMeetingProposal,
   endConnection,
+  generateMeetLink,
+  listGuideOptionsForConnection,
   markMeeting,
   MeetingProposalError,
   proposeMeeting,
   reportConnection,
   selectConnectionGuide,
   sendMessage,
+  setMyIntroRequirement,
   setMySessionTypes,
   suggestGuideForConnection,
 } from "@/modules/connections/service";
@@ -120,6 +123,42 @@ export async function pickGuideForConnectionAction(input: unknown): Promise<Acti
   }
 }
 
+/** Lists a category's published guides so the connection room can offer a browse-and-pick flow instead of only a random suggestion. */
+export async function listGuideOptionsAction(
+  input: unknown,
+): Promise<{ ok: true; guides: Awaited<ReturnType<typeof listGuideOptionsForConnection>> } | { ok: false; error: string }> {
+  const user = await requireUser();
+  const parsed = pickGuideSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    const guides = await listGuideOptionsForConnection(user.id, parsed.data.connectionId, parsed.data.category);
+    return { ok: true, guides };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
+const selectGuideSchema = z.object({
+  connectionId: z.string().min(1),
+  guideId: z.string().min(1),
+});
+
+/** Attaches a specific guide the user picked from the browse list — bypasses the random pick in pickGuideForConnectionAction. */
+export async function selectGuideForConnectionAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = selectGuideSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await selectConnectionGuide(user.id, parsed.data.connectionId, parsed.data.guideId);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
 export async function clearConnectionGuideAction(connectionId: string): Promise<ActionState> {
   const user = await requireUser();
   try {
@@ -158,6 +197,26 @@ export async function setMySessionTypesAction(input: unknown): Promise<ActionSta
 
   try {
     await setMySessionTypes(user.id, parsed.data.connectionId, parsed.data.sessionTypes as ConnectionReason[]);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "משהו השתבש. נסו שוב" };
+  }
+}
+
+const introRequirementSchema = z.object({
+  connectionId: z.string().min(1),
+  stance: z.enum(["REQUIRED", "NOT_REQUIRED"]),
+});
+
+/** Each side's own, informational-only declaration of whether a video intro meeting is a prerequisite for them — never technically enforced; see IntroMeetingStance in service.ts. */
+export async function setMyIntroRequirementAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = introRequirementSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await setMyIntroRequirement(user.id, parsed.data.connectionId, parsed.data.stance);
     revalidatePath(`/app/connections/${parsed.data.connectionId}`);
     return { ok: true };
   } catch {
@@ -282,6 +341,20 @@ export async function attachMeetLinkAction(input: unknown): Promise<ActionState>
 
   try {
     await attachMeetLink(user.id, parsed.data.connectionId, parsed.data.proposalId, parsed.data.meetLink);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+export async function generateMeetLinkAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = respondToProposalSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await generateMeetLink(user.id, parsed.data.connectionId, parsed.data.proposalId);
     revalidatePath(`/app/connections/${parsed.data.connectionId}`);
     return { ok: true };
   } catch (error) {

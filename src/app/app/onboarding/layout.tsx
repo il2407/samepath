@@ -7,6 +7,7 @@ const steps = [
   { key: "profile", label: "פרופיל מקצועי" },
   { key: "privacy", label: "פרטיות" },
   { key: "preferences", label: "העדפות חיבור" },
+  { key: "overview", label: "סקירה ואישור" },
 ] as const;
 
 export default async function OnboardingLayout({ children }: LayoutProps<"/app/onboarding">) {

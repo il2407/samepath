@@ -9,8 +9,10 @@ import {
   endConnection,
   getConnectionDetail,
   listConnectionsForUser,
+  listGuideOptionsForConnection,
   selectConnectionGuide,
   sendMessage,
+  setMyIntroRequirement,
   setMySessionTypes,
   suggestGuideForConnection,
 } from "@/modules/connections/service";
@@ -164,6 +166,70 @@ describe("setMySessionTypes", () => {
     const { connection } = await createTestConnection();
     const outsider = await createTestUser();
     await expect(setMySessionTypes(outsider.user.id, connection.id, ["MENTAL_SUPPORT"])).rejects.toThrow();
+  });
+});
+
+describe("listGuideOptionsForConnection", () => {
+  it("lists every published guide in the category, ordered", async () => {
+    const { a, connection } = await createTestConnection();
+    const first = await createPublishedGuide("coding", "test-guide-list-1");
+    const second = await createPublishedGuide("coding", "test-guide-list-2");
+
+    const options = await listGuideOptionsForConnection(a.user.id, connection.id, "coding");
+
+    expect(options.map((g) => g.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it("returns an empty list when the category has no published guides", async () => {
+    const { a, connection } = await createTestConnection();
+    const options = await listGuideOptionsForConnection(a.user.id, connection.id, "system-design");
+    expect(options).toEqual([]);
+  });
+
+  it("refuses a non-participant", async () => {
+    const { connection } = await createTestConnection();
+    const outsider = await createTestUser();
+    await expect(listGuideOptionsForConnection(outsider.user.id, connection.id, "coding")).rejects.toThrow();
+  });
+});
+
+describe("setMyIntroRequirement", () => {
+  it("lets each participant independently declare their stance, visible to the other", async () => {
+    const { a, b, connection } = await createTestConnection();
+
+    await setMyIntroRequirement(a.user.id, connection.id, "REQUIRED");
+    await setMyIntroRequirement(b.user.id, connection.id, "NOT_REQUIRED");
+
+    const detailForA = await getConnectionDetail(a.user.id, connection.id);
+    const detailForB = await getConnectionDetail(b.user.id, connection.id);
+
+    expect(detailForA?.myIntroStance).toBe("REQUIRED");
+    expect(detailForA?.otherPartyIntroStance).toBe("NOT_REQUIRED");
+    expect(detailForB?.myIntroStance).toBe("NOT_REQUIRED");
+    expect(detailForB?.otherPartyIntroStance).toBe("REQUIRED");
+  });
+
+  it("defaults to null (no stance declared) until a participant sets one", async () => {
+    const { a, connection } = await createTestConnection();
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.myIntroStance).toBeNull();
+    expect(detail?.otherPartyIntroStance).toBeNull();
+  });
+
+  it("upserts rather than duplicating on repeated calls", async () => {
+    const { a, connection } = await createTestConnection();
+
+    await setMyIntroRequirement(a.user.id, connection.id, "REQUIRED");
+    await setMyIntroRequirement(a.user.id, connection.id, "NOT_REQUIRED");
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.myIntroStance).toBe("NOT_REQUIRED");
+  });
+
+  it("refuses a non-participant", async () => {
+    const { connection } = await createTestConnection();
+    const outsider = await createTestUser();
+    await expect(setMyIntroRequirement(outsider.user.id, connection.id, "REQUIRED")).rejects.toThrow();
   });
 });
 

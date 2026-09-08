@@ -1,11 +1,9 @@
-// Pure logic, no DB/framework import — backend validation for the "paste an
-// existing Google Meet link" fallback (WS7 backlog item 14). See README
-// "Google Meet / Calendar" and docs/architecture-decisions.md: this app does
-// NOT integrate with the real Google Calendar/Meet API (no OAuth scope for
-// it, no auto-created events) — a manually pasted link, validated here, is
-// the deliberately simpler v1. Full Calendar-API auto-creation is a
-// documented, explicitly out-of-scope stretch phase — see the doc comment at
-// the bottom of this file.
+// Pure logic, no DB/framework import — backend validation for a Google Meet
+// link, whether pasted manually or generated via the Meet API v2 (see
+// src/modules/auth/google-meet.ts and generateMeetLink in service.ts). Every
+// meetLink written to a MeetingProposal, regardless of source, is validated
+// here first — never trust a frontend `type="url"` input, or the shape of an
+// API response, alone (item 14.9).
 
 /**
  * Real Google Meet links look like `https://meet.google.com/xxx-xxxx-xxx`
@@ -51,18 +49,15 @@ export function validateMeetLink(raw: string): MeetLinkValidationResult {
 }
 
 // -----------------------------------------------------------------------
-// Documented, explicitly out-of-scope stretch phase: real Calendar/Meet
-// integration
+// Still out of scope: real Calendar integration
 // -----------------------------------------------------------------------
 //
-// A future iteration could request the Google Calendar API scope (in
-// addition to the current sign-in-only `openid email profile` — see
-// src/modules/auth/google-oauth.ts), store a refresh token per user, and
-// call calendar.events.insert with conferenceDataVersion: 1 to have Google
-// auto-generate a real Meet link and calendar invites for both
-// participants. That was deliberately NOT attempted this phase: it needs a
-// consent screen for a new, more sensitive scope, secure refresh-token
-// storage and rotation, and handling for token revocation/expiry — a
-// meaningfully larger surface than this backlog item's scope. The
-// manually-pasted-and-validated link above is the intentionally simpler
-// fallback until that investment is made.
+// Real Meet link generation is implemented (Meet API v2's spaces.create, via
+// an incremental-consent grant — see src/modules/auth/google-meet.ts,
+// GoogleMeetGrant in schema.prisma, and generateMeetLink in service.ts).
+// What remains out of scope is the Calendar API: no calendar event or invite
+// is auto-created for either participant, since that would require the
+// separate, more sensitive Calendar scope and its own consent screen. The
+// manually-pasted-link path above remains available as a fallback (e.g. for
+// a Meet link created outside the app, or a user who declines the Google
+// Meet consent screen).

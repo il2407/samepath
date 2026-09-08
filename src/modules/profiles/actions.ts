@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
 import {
+  activateProfile,
   completeConnectionPreferences,
   completePrivacyOnboarding,
   saveProfileStepOne,
@@ -168,6 +169,13 @@ export async function completeConnectionPreferencesAction(input: unknown): Promi
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
   await completeConnectionPreferences(user.id, parsed.data);
+  revalidatePath("/app", "layout");
+  redirect("/app/onboarding/overview");
+}
+
+export async function confirmOnboardingAction(): Promise<void> {
+  const user = await requireUser();
+  await activateProfile(user.id);
   revalidatePath("/app", "layout");
   redirect("/app");
 }

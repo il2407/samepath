@@ -14,16 +14,20 @@ import {
   counterProposeMeetingAction,
   declineMeetingProposalAction,
   endConnectionAction,
+  generateMeetLinkAction,
+  listGuideOptionsAction,
   markMeetingAction,
   pickGuideForConnectionAction,
   proposeMeetingAction,
   reportConnectionAction,
+  selectGuideForConnectionAction,
   sendMessageAction,
+  setMyIntroRequirementAction,
   setMySessionTypesAction,
 } from "@/modules/connections/actions";
 import { connectionReasonLabels, reportCategoryLabels, sessionTypeReasons } from "@/modules/profiles/labels";
 import type { ConnectionDetail, MeetingProposalDetail } from "@/modules/connections/service";
-import type { ConnectionReason } from "@/generated/prisma/client";
+import type { ConnectionReason, IntroMeetingStance } from "@/generated/prisma/client";
 
 const roleLabels: Record<string, string> = { PRESENTER: "מציג/ה", LISTENER: "מקשיב/ה", BOTH: "שניכם" };
 
@@ -36,16 +40,21 @@ function SessionTypeSelector({
   mySessionTypes,
   otherPartySessionTypes,
   hasSelectedGuide,
+  myIntroStance,
+  otherPartyIntroStance,
 }: {
   connectionId: string;
   mySessionTypes: string[];
   otherPartySessionTypes: string[];
   hasSelectedGuide: boolean;
+  myIntroStance: IntroMeetingStance | null;
+  otherPartyIntroStance: IntroMeetingStance | null;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>(mySessionTypes);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [introPending, startIntroTransition] = useTransition();
 
   function toggle(value: string) {
     const wasAdded = !selected.includes(value);
@@ -64,6 +73,17 @@ function SessionTypeSelector({
       router.refresh();
     });
   }
+
+  function toggleIntroRequired(required: boolean) {
+    startIntroTransition(async () => {
+      await setMyIntroRequirementAction({ connectionId, stance: required ? "REQUIRED" : "NOT_REQUIRED" });
+      router.refresh();
+    });
+  }
+
+  const mismatch =
+    (myIntroStance === "REQUIRED" && otherPartyIntroStance === "NOT_REQUIRED") ||
+    (myIntroStance === "NOT_REQUIRED" && otherPartyIntroStance === "REQUIRED");
 
   return (
     <div className="rounded-2xl border border-border bg-white p-6">
@@ -98,9 +118,30 @@ function SessionTypeSelector({
           הצד השני מעוניין/ת ב: {otherPartySessionTypes.map((r) => connectionReasonLabels[r] ?? r).join(", ")}
         </p>
       )}
+
+      <label className="mt-4 flex items-start gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={myIntroStance === "REQUIRED"}
+          disabled={introPending}
+          onChange={(e) => toggleIntroRequired(e.target.checked)}
+        />
+        <span>מבחינתי, חובה שתהיה פגישת היכרות בוידאו לפני שממשיכים בחיבור</span>
+      </label>
+
+      {mismatch && (
+        <p className="mt-3 rounded-xl border border-happy bg-happy/20 p-3 text-sm text-happy-dark">
+          {myIntroStance === "NOT_REQUIRED"
+            ? "הצד השני לא מעוניין/ת להמשיך בחיבור כל עוד לא הייתה פגישת היכרות בוידאו."
+            : "מבחינתך חובה פגישת היכרות בוידאו, אבל הצד השני סימן/ה שזה לא הכרחי מבחינתו/ה."}
+        </p>
+      )}
     </div>
   );
 }
+
+type GuideOption = { id: string; title: string; purpose: string; suggestedDurationMinutes: number };
 
 function SuggestedSession({
   connectionId,
@@ -114,6 +155,32 @@ function SuggestedSession({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [guideOptions, setGuideOptions] = useState<GuideOption[]>([]);
+
+  function browse(category: string) {
+    setError(null);
+    if (openCategory === category) {
+      setOpenCategory(null);
+      return;
+    }
+    startTransition(async () => {
+      const result = await listGuideOptionsAction({ connectionId, category });
+      if (!result.ok) return setError(result.error ?? "משהו השתבש");
+      setGuideOptions(result.guides);
+      setOpenCategory(category);
+    });
+  }
+
+  function choose(guideId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await selectGuideForConnectionAction({ connectionId, guideId });
+      if (!result.ok) return setError(result.error ?? "משהו השתבש");
+      setOpenCategory(null);
+      router.refresh();
+    });
+  }
 
   function pick(category: string) {
     setError(null);
@@ -141,18 +208,48 @@ function SuggestedSession({
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {!selectedGuide ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {categories.map((c) => (
-            <button
-              key={c.slug}
-              type="button"
-              disabled={pending}
-              onClick={() => pick(c.slug)}
-              className="rounded-full border border-primary px-4 py-2 text-sm text-primary-dark hover:bg-mint disabled:opacity-50"
-            >
-              {c.labelHe}
-            </button>
-          ))}
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <button
+                key={c.slug}
+                type="button"
+                disabled={pending}
+                onClick={() => browse(c.slug)}
+                aria-pressed={openCategory === c.slug}
+                className={
+                  openCategory === c.slug
+                    ? "rounded-full border border-primary bg-mint px-4 py-2 text-sm text-primary-dark disabled:opacity-50"
+                    : "rounded-full border border-primary px-4 py-2 text-sm text-primary-dark hover:bg-mint disabled:opacity-50"
+                }
+              >
+                {c.labelHe}
+              </button>
+            ))}
+          </div>
+
+          {openCategory && (
+            <div className="mt-3 space-y-2">
+              {guideOptions.length === 0 && <p className="text-sm text-muted">אין עדיין מערכי שיעור בקטגוריה הזו</p>}
+              {guideOptions.map((guide) => (
+                <div key={guide.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-paper p-3">
+                  <div>
+                    <p className="text-sm font-medium text-ink">{guide.title}</p>
+                    <p className="text-sm text-muted">{guide.purpose}</p>
+                    <p className="mt-1 text-xs text-muted">כ-{guide.suggestedDurationMinutes} דק׳</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => choose(guide.id)}
+                    className="shrink-0 rounded-full border border-primary px-4 py-1.5 text-sm text-primary-dark hover:bg-mint disabled:opacity-50"
+                  >
+                    בחר/י
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="mt-4">
@@ -351,11 +448,13 @@ function MeetingProposalPanel({
   currentUserId,
   proposals,
   myTimezone,
+  hasGoogleMeetConnected,
 }: {
   connectionId: string;
   currentUserId: string;
   proposals: MeetingProposalDetail[];
   myTimezone: string;
+  hasGoogleMeetConnected: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -413,12 +512,25 @@ function MeetingProposalPanel({
     });
   }
 
+  function generateLink() {
+    if (!latest) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await generateMeetLinkAction({ connectionId, proposalId: latest.id });
+      if (!result.ok) {
+        setError(result.error ?? "משהו השתבש");
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-white p-6">
       <h2 className="font-semibold text-ink">תיאום מפגש</h2>
       <p className="mt-1 text-sm text-muted">
-        הצעה, אישור, דחייה או הצעה נגדית לזמן ולפורמט של המפגש הבא — כולל אפשרות לצרף קישור קיים ל-Google Meet. אין
-        יצירה אוטומטית של אירוע ביומן.
+        הצעה, אישור, דחייה או הצעה נגדית לזמן ולפורמט של המפגש הבא — כולל אפשרות ליצור קישור חדש ל-Google Meet או לצרף
+        קישור קיים. אין יצירה אוטומטית של אירוע ביומן.
       </p>
 
       {error && (
@@ -482,6 +594,21 @@ function MeetingProposalPanel({
           {showCounterForm && isOpen && !iAmProposer && (
             <ProposalForm connectionId={connectionId} mode="counter" counterTargetId={latest.id} onDone={() => setShowCounterForm(false)} />
           )}
+
+          <div className="mt-3">
+            {hasGoogleMeetConnected ? (
+              <Button variant="secondary" disabled={pending} onClick={generateLink} className="px-3 py-2 text-sm">
+                יצירת קישור Google Meet
+              </Button>
+            ) : (
+              <a
+                href={`/api/auth/google-meet/start?returnTo=${encodeURIComponent(`/app/connections/${connectionId}`)}`}
+                className="inline-flex items-center rounded-lg border border-border px-3 py-2 text-sm text-primary hover:text-primary-dark"
+              >
+                התחברות ל-Google ליצירת קישור Meet
+              </a>
+            )}
+          </div>
 
           <form onSubmit={submitLink} className="mt-3 flex gap-2">
             <label htmlFor="attach-meet-link" className="sr-only">
@@ -629,11 +756,13 @@ export function ConnectionRoom({
   meetingProposals,
   currentUserId,
   categories,
+  hasGoogleMeetConnected,
 }: {
   connection: ConnectionDetail;
   meetingProposals: MeetingProposalDetail[];
   currentUserId: string;
   categories: readonly { slug: string; labelHe: string }[];
+  hasGoogleMeetConnected: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -786,6 +915,8 @@ export function ConnectionRoom({
           mySessionTypes={connection.mySessionTypes}
           otherPartySessionTypes={connection.otherPartySessionTypes}
           hasSelectedGuide={connection.selectedGuide !== null}
+          myIntroStance={connection.myIntroStance}
+          otherPartyIntroStance={connection.otherPartyIntroStance}
         />
       )}
 
@@ -797,6 +928,7 @@ export function ConnectionRoom({
           currentUserId={currentUserId}
           proposals={meetingProposals}
           myTimezone={connection.myTimezone}
+          hasGoogleMeetConnected={hasGoogleMeetConnected}
         />
       )}
 

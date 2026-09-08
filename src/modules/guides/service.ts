@@ -53,3 +53,12 @@ export async function getRandomGuideForCategory(category: string) {
   const pick = candidates[Math.floor(Math.random() * candidates.length)];
   return getPublishedGuide(pick.id);
 }
+
+/** Lists every published guide in a category so a connection's participants can browse and pick a specific one, instead of only getting a random pick. */
+export async function listGuidesForCategory(category: string) {
+  return prisma.sessionGuide.findMany({
+    where: { status: "PUBLISHED", category },
+    orderBy: { order: "asc" },
+    select: { id: true, title: true, purpose: true, suggestedDurationMinutes: true },
+  });
+}
