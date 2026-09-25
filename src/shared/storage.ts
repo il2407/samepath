@@ -2,6 +2,7 @@ import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { env } from "@/shared/env";
 
 export interface Storage {
@@ -36,26 +37,38 @@ class LocalStorage implements Storage {
 }
 
 /**
- * Not implemented in this MVP — the payment provider follows the same
- * pattern (§10: "fake/local impl only"). Wire an S3-compatible SDK here
- * (put via multipart upload, get/delete via the SDK client, and expose
- * presigned URLs if the app ever needs to hand a signed link to a client)
- * before setting STORAGE_ADAPTER=s3 in any real deployment. See README.
+ * S3-compatible adapter (AWS S3, Cloudflare R2, etc. — pick via S3_ENDPOINT;
+ * leave it empty for AWS). The bucket must be private: objects are only ever
+ * streamed back through authenticated app routes, never linked publicly.
  */
 class S3Storage implements Storage {
+  private client: S3Client;
+  private bucket: string;
+
   constructor() {
-    throw new Error(
-      "STORAGE_ADAPTER=s3 is not implemented in this MVP. Configure an S3-compatible SDK in src/shared/storage.ts before using it.",
-    );
+    if (!env.S3_BUCKET || !env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) {
+      throw new Error("STORAGE_ADAPTER=s3 requires S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+    }
+    this.bucket = env.S3_BUCKET;
+    this.client = new S3Client({
+      region: env.S3_REGION || "auto",
+      endpoint: env.S3_ENDPOINT || undefined,
+      credentials: { accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY },
+    });
   }
-  async put(): Promise<void> {
-    throw new Error("not implemented");
+
+  async put(key: string, data: Buffer): Promise<void> {
+    await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: data }));
   }
-  async get(): Promise<Buffer> {
-    throw new Error("not implemented");
+
+  async get(key: string): Promise<Buffer> {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (!res.Body) throw new Error("storage object has no body");
+    return Buffer.from(await res.Body.transformToByteArray());
   }
-  async delete(): Promise<void> {
-    throw new Error("not implemented");
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 

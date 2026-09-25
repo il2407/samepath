@@ -125,7 +125,14 @@ pattern (see `Mailer` / `Storage` / `PaymentProvider` in `README.md`'s
 Adapters table), the "adapter" for scheduling here is simply *an operator
 configures an external HTTP-calling scheduler* — no cron/queue process is
 built, run, or assumed by the application itself. Any of the following
-work identically, since the route is a plain authenticated HTTP endpoint:
+work identically, since the route is a plain authenticated HTTP endpoint.
+
+**On Vercel (the chosen host)**, `vercel.json` registers a Vercel Cron
+that `GET`s `/api/jobs/matching` daily at 05:00 UTC. Vercel sends
+`Authorization: Bearer $CRON_SECRET`, so set the `CRON_SECRET` project
+env var to the *same value* as `JOB_SCHEDULER_SECRET`. The daily schedule
+fits the Hobby plan; on Pro you can tighten it (e.g. `0 * * * *`). Other
+options:
 
 - A managed cron-as-a-service product (e.g. cron-job.org, EasyCron,
   Upstash QStash, GitHub Actions on a `schedule:` trigger, your hosting

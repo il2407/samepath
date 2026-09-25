@@ -121,11 +121,11 @@ given the app never needs third-party scripts.
 
 `src/shared/storage.ts`'s `LocalStorage` adapter writes under
 `.local-storage/` — outside `public/`, so nothing uploaded is ever served
-by Next.js's static file handling. The `S3Storage` branch is an
-intentional not-implemented stub (mirrors the payment provider's
-"fake/local impl only" scope for this MVP) — implement it with real
-presigned URLs and bucket-level access controls before
-`STORAGE_ADAPTER=s3` is used anywhere real.
+by Next.js's static file handling. `S3Storage` (AWS S3 or any
+S3-compatible store via `S3_ENDPOINT`) is the production adapter. The
+bucket must block all public access: objects are only ever read
+server-side and streamed through authenticated routes, never linked
+directly, so no presigned URLs are issued.
 
 ## Summary
 
@@ -139,4 +139,4 @@ presigned URLs and bucket-level access controls before
 | DB constraints | Covered, test-verified |
 | Dependency audit | Clean at runtime; 4 dev-tooling-only findings |
 | Security headers | Not implemented |
-| File storage | Local adapter safe; S3 adapter not implemented |
+| File storage | Local adapter for dev; S3 adapter for production (private bucket) |

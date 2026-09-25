@@ -48,9 +48,6 @@ it, and was verified live in a browser at least once during development.
   a defined interface and a fake/local/no-op implementation, matching the
   build brief's explicit "fake/local impl only" scope. See
   [Adapters](#adapters) and `docs/security-hardening.md`.
-- S3-compatible object storage — the `Storage` interface exists
-  (`src/shared/storage.ts`) with a working local-disk adapter; the S3
-  branch throws a clear "not implemented" error on construction.
 - Any JobTracker Pro integration — `docs/jobtracker-integration.md` and
   `src/modules/integrations/jobtracker/types.ts` document a proposed
   boundary; nothing is wired up, imported, or callable.
@@ -387,7 +384,8 @@ one:
 
 **Before any real deployment, at minimum:** switch `MAIL_ADAPTER` to
 `smtp` (the console adapter prints verification codes to stdout — see
-`docs/security-hardening.md`), implement the `S3Storage` branch, and
+`docs/security-hardening.md`), set `STORAGE_ADAPTER=s3` with a private bucket
+(required on Vercel, whose filesystem is read-only), and
 replace `NoopScanner` with a real scanner. `PAYMENT_PROVIDER` staying
 `fake` is a hard product decision, not an oversight — no real payment
 processing exists anywhere in this codebase, per the build brief's
@@ -450,8 +448,8 @@ through the items below first:
 2. A real, random `SESSION_SECRET` (32+ bytes) — never the example value.
 3. `MAIL_ADAPTER=smtp` with real credentials — see
    [Adapters](#adapters); this one is not optional.
-4. A `STORAGE_ADAPTER=s3` implementation (currently throws by design —
-   see `src/shared/storage.ts`) and a real bucket with private ACLs.
+4. `STORAGE_ADAPTER=s3` pointed at a real private bucket (AWS S3 or any
+   S3-compatible store such as Cloudflare R2 via `S3_ENDPOINT`).
 5. A real malware scanner behind `MalwareScanner` before accepting
    uploads from untrusted users.
 6. `RATE_LIMIT_ADAPTER` backed by a shared store (Redis or similar) the
@@ -512,7 +510,7 @@ here rather than silently assumed away:
 
 - [ ] Legal review of every item above
 - [ ] `MAIL_ADAPTER=smtp` with real credentials
-- [ ] `S3Storage` implemented and `STORAGE_ADAPTER=s3` configured
+- [ ] `STORAGE_ADAPTER=s3` configured against a private bucket
 - [ ] Real `MalwareScanner` implementation
 - [ ] Real `PaymentProvider` implementation (explicit approval required —
       see the build brief's constraint against enabling real payments
