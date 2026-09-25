@@ -24,6 +24,13 @@ scheduling-adjacent concerns: batching, run-level bookkeeping, overlap
 prevention, per-user retry/failure isolation, and an email notification for
 matches created while nobody was looking at the app.
 
+Separately, every entry to the member app (a full load of the `/app`
+layout) runs the same search for the signed-in user via
+`searchNewSuggestionsOnVisit` in `matching/service.ts`: new suggestions get
+an in-app `NEW_MATCH` notification for both sides plus a pop-up, and there's
+an in-memory 60-second cooldown per user against rapid reloads. That covers
+users who are active; this job covers the ones who aren't.
+
 Every run is recorded as one `JobRun` row (`prisma/schema.prisma`):
 `status` (`RUNNING` / `SUCCESS` / `PARTIAL` / `FAILURE`), `startedAt` /
 `finishedAt`, `usersProcessed`, `matchesCreated`, `notificationsSent`,

@@ -31,7 +31,6 @@ export async function loadRawProfileForDto(userId: string): Promise<RawProfileFo
         currentCompany: { select: { canonicalName: true } },
         targetRoles: { include: { targetRole: { select: { labelHe: true } } } },
         tags: { include: { tag: { select: { labelHe: true } } } },
-        languages: { include: { language: { select: { labelHe: true } } } },
         connectionPreference: true,
         availabilitySlots: { select: { dayOfWeek: true, startMinute: true, endMinute: true } },
         disclosurePreference: true,
@@ -41,11 +40,11 @@ export async function loadRawProfileForDto(userId: string): Promise<RawProfileFo
   if (!user || !profile) return null;
 
   return {
+    currentRoleTitle: profile.currentRoleTitle,
     professionalField: profile.professionalField,
     seniorityBand: profile.seniorityBand,
     targetRoles: profile.targetRoles.map((r) => r.targetRole),
     tags: profile.tags.map((t) => t.tag),
-    languages: profile.languages.map((l) => l.language),
     shortIntro: profile.shortIntro,
     connectionPreference: profile.connectionPreference
       ? {
@@ -59,6 +58,7 @@ export async function loadRawProfileForDto(userId: string): Promise<RawProfileFo
     region: profile.region,
     company: profile.currentCompany,
     cvVerifiedAt: profile.cvVerifiedAt,
+    experienceMonths: profile.experienceMonths,
     disclosurePreference: profile.disclosurePreference,
     userEmail: user.email,
   };

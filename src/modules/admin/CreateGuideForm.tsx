@@ -10,6 +10,8 @@ interface StepRow {
   title: string;
   prompt: string;
   kind: "AGENDA" | "PROMPT" | "FOLLOWUP";
+  role: "PRESENTER" | "LISTENER" | "BOTH";
+  durationMinutes: number | "";
 }
 
 export function CreateGuideForm() {
@@ -26,7 +28,10 @@ export function CreateGuideForm() {
   const [pending, startTransition] = useTransition();
 
   function addStep() {
-    setSteps((rows) => [...rows, { key: crypto.randomUUID(), title: "", prompt: "", kind: "AGENDA" }]);
+    setSteps((rows) => [
+      ...rows,
+      { key: crypto.randomUUID(), title: "", prompt: "", kind: "AGENDA", role: "BOTH", durationMinutes: "" },
+    ]);
   }
   function updateStep(key: string, patch: Partial<StepRow>) {
     setSteps((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -49,7 +54,15 @@ export function CreateGuideForm() {
         format,
         category: category.trim() || undefined,
         publish,
-        steps: steps.filter((s) => s.title.trim() && s.prompt.trim()).map((s) => ({ title: s.title, prompt: s.prompt, kind: s.kind })),
+        steps: steps
+          .filter((s) => s.title.trim() && s.prompt.trim())
+          .map((s) => ({
+            title: s.title,
+            prompt: s.prompt,
+            kind: s.kind,
+            role: s.role,
+            durationMinutes: s.durationMinutes === "" ? undefined : s.durationMinutes,
+          })),
       });
       if (!result.ok) {
         setError(result.error ?? "משהו השתבש");
@@ -80,7 +93,7 @@ export function CreateGuideForm() {
 
       <div className="space-y-2">
         {steps.map((s) => (
-          <div key={s.key} className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-[1fr_2fr_auto_auto]">
+          <div key={s.key} className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-[1fr_2fr_auto_auto_auto_auto]">
             <input value={s.title} onChange={(e) => updateStep(s.key, { title: e.target.value })} placeholder="כותרת השלב" className="rounded-lg border border-border px-2 py-1.5 text-sm" />
             <input value={s.prompt} onChange={(e) => updateStep(s.key, { prompt: e.target.value })} placeholder="שאלה מנחה / תוכן" className="rounded-lg border border-border px-2 py-1.5 text-sm" />
             <select value={s.kind} onChange={(e) => updateStep(s.key, { kind: e.target.value as StepRow["kind"] })} className="rounded-lg border border-border px-2 py-1.5 text-sm">
@@ -88,6 +101,19 @@ export function CreateGuideForm() {
               <option value="PROMPT">שאלה מנחה</option>
               <option value="FOLLOWUP">המשך</option>
             </select>
+            <select value={s.role} onChange={(e) => updateStep(s.key, { role: e.target.value as StepRow["role"] })} className="rounded-lg border border-border px-2 py-1.5 text-sm">
+              <option value="BOTH">תפקיד: שניכם</option>
+              <option value="PRESENTER">תפקיד: פעיל/ה</option>
+              <option value="LISTENER">תפקיד: מקשיב/ה</option>
+            </select>
+            <input
+              type="number"
+              min={0}
+              value={s.durationMinutes}
+              onChange={(e) => updateStep(s.key, { durationMinutes: e.target.value === "" ? "" : Number(e.target.value) })}
+              placeholder="דקות"
+              className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
+            />
             <button type="button" onClick={() => removeStep(s.key)} className="text-sm text-muted hover:text-danger">
               הסרה
             </button>

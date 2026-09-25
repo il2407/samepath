@@ -1,18 +1,25 @@
 import "server-only";
+import Anthropic from "@anthropic-ai/sdk";
 import { env } from "@/shared/env";
-import { parseResumeText, type ExtractedResumeText, type KnownLabel } from "@/modules/resumes/deterministic-parser";
+import {
+  parseResumeText,
+  extractPhoneGuess,
+  extractLinkedInGuess,
+  type ExtractedResumeText,
+  type CandidatePosition,
+  type KnownLabel,
+} from "@/modules/resumes/deterministic-parser";
 
 /**
  * Everything a ResumeParser needs to resolve free text into this
- * deployment's actual reference-data taxonomy (skills/domains, languages,
- * target roles, regions). Passed in by the caller (resumes/service.ts, which
+ * deployment's actual reference-data taxonomy (skills/domains, target roles,
+ * regions). Passed in by the caller (resumes/service.ts, which
  * already owns the Prisma queries) rather than looked up internally, so a
  * parser implementation never needs its own DB access — deterministic or
  * AI-backed, it's just given text in and structured labels out.
  */
 export interface ResumeParserContext {
   knownTags: KnownLabel[];
-  knownLanguages: KnownLabel[];
   knownTargetRoles: KnownLabel[];
   knownRegions: KnownLabel[];
 }
@@ -21,103 +28,266 @@ export interface ResumeParserContext {
  * Provider-agnostic résumé structured-extraction boundary — the same shape
  * as this codebase's other swappable adapters (`Mailer`, `Storage`,
  * `PaymentProvider`, `MalwareScanner`): a small interface, a real wired
- * default implementation, and a documented (not silently missing) path to a
- * fancier one. Selected via `RESUME_PARSER` (`.env.example`), exactly like
- * `MAIL_ADAPTER`/`STORAGE_ADAPTER` select their own implementations.
+ * default implementation, and a documented alternative. Selected via
+ * `RESUME_PARSER` (`.env.example`), exactly like `MAIL_ADAPTER`/
+ * `STORAGE_ADAPTER` select their own implementations.
  *
- * ## Evaluation: deterministic vs. AI-backed extraction
+ * Wired default is `AiResumeParser` (Claude API, tool-use for structured
+ * output) — a product decision to fully replace the deterministic parser for
+ * every upload, in exchange for handling the wide variety of real-world
+ * résumé layouts far better than a fixed set of regexes can. This does send
+ * the résumé's text content to Anthropic's API; `ResumeUploadCard`'s
+ * in-product copy reflects that. `DeterministicResumeParser` (regex/heuristic,
+ * no network call, see `deterministic-parser.ts`) remains available and
+ * fully tested — set `RESUME_PARSER=deterministic` to use it instead, e.g.
+ * for an environment with no `RESUME_AI_API_KEY` or that wants zero
+ * third-party data exposure. Full evaluation of the tradeoffs:
+ * `docs/resume-extraction-approach.md`.
  *
- * Options considered — deterministic regex/heuristic parsing (this file's
- * wired implementation), a local/self-hosted AI model, an in-browser AI
- * model, the Claude API, and a hybrid (deterministic first, AI for the
- * fields it left empty). Full writeup: `docs/resume-extraction-approach.md`
- * (includes the OCR/scanned-PDF evaluation too). Summary:
- *
- * - **Cost & latency**: deterministic parsing is free and runs in
- *   milliseconds, inline in the same request that already has to handle the
- *   upload — consistent with this codebase's "no background job queue, run
- *   due-date work inline" architecture (`docs/architecture-decisions.md`
- *   #9). Every AI option adds real per-request latency (seconds) and, for a
- *   hosted API, a per-call cost with no billing/plan model in this MVP to
- *   absorb it.
- * - **Privacy**: the product's own premise is discretion (README: "a
- *   discreet professional community"). Sending a résumé's employment
- *   history, titles, and dates to a third-party AI API is a real privacy
- *   cost the deterministic parser (which never leaves this process) simply
- *   doesn't have — `ResumeUploadCard` already tells users their file "is
- *   not sent to any third-party service"; a real AI call would make that
- *   false.
- * - **Accuracy**: an AI parser would likely do better on messy/unusual
- *   résumés and could plausibly fill fields the deterministic parser
- *   structurally can't (education, a genuinely abstractive summary) — a
- *   real advantage, not a strawman. But every extraction here is a *draft*
- *   the user reviews before it ever touches their real profile
- *   (`ResumeDraftReview` → `ProfileStepOneForm`), so the deterministic
- *   parser's lower recall just costs the user "fill in one more field,"
- *   while an AI parser's failure mode is a wrong-looking, *confident* value
- *   that's easier to skim past unverified — a worse failure mode for a
- *   product whose match quality depends on people trusting the data
- *   (see the account-wide "never present hallucinated information as fact"
- *   rule this module also follows). Deterministic parsing is also
- *   exhaustively unit-testable with zero mocked network calls and never
- *   crashes or degrades unpredictably on adversarial/malformed input.
- * - **On-device/in-browser AI**: solves the privacy objection but means
- *   shipping a real inference runtime (client-side model download, or a
- *   server-side one) — genuine new infra/ops this MVP's "no second process
- *   to operate" philosophy explicitly avoids elsewhere.
- * - **Hybrid**: the most promising *future* direction — keep the common
- *   case free/local/instant, and only pay AI cost + latency + privacy
- *   exposure for the fields the deterministic pass left empty (education, a
- *   real summary) on résumés that need it. Not implemented here: it still
- *   needs a real provider, a budget, and an explicit user-facing disclosure
- *   ("this field was filled in with the help of an AI service") that
- *   doesn't exist in this MVP.
- *
- * **Recommendation**: keep deterministic as the wired default; invest
- * further effort in its heuristics and test coverage (this pass added
- * target-role, region, and short-intro-summary detection — see
- * `deterministic-parser.ts`) rather than reaching for AI. `AiResumeParser`
- * below is a documented, swappable placeholder for whenever a real
- * provider, a budget, and a privacy-disclosure story exist — matching
- * `RESUME_AI_API_KEY`'s existing placeholder in `.env.example`. It is not
- * wired to anything network-capable, and this pass adds no AI-provider
- * dependency.
+ * Every extraction — deterministic or AI — is still only ever a *draft* the
+ * user reviews and can freely edit before it touches a real profile
+ * (`ResumeDraftReview` → `ProfileStepOneForm`); nothing here is applied
+ * automatically. `AiResumeParser` additionally constrains every matched
+ * tag/target-role/region id to the known-label sets passed in via
+ * `ResumeParserContext` (ids outside those sets are dropped, not trusted),
+ * so it can suggest free-text fields (company, title, a summary sentence)
+ * but can never invent a reference-data id that doesn't exist — matching the
+ * account-wide "never present hallucinated information as fact" rule.
  */
 export interface ResumeParser {
   parse(text: string, context: ResumeParserContext): ExtractedResumeText | Promise<ExtractedResumeText>;
 }
 
-/** The real, wired implementation — see the module doc comment above for why. */
+/** No-network fallback/alternative — see the module doc comment above for when to use it instead. */
 class DeterministicResumeParser implements ResumeParser {
   parse(text: string, context: ResumeParserContext): ExtractedResumeText {
-    return parseResumeText(text, context.knownTags, context.knownLanguages, context.knownTargetRoles, context.knownRegions);
+    return parseResumeText(text, context.knownTags, context.knownTargetRoles, context.knownRegions);
   }
 }
 
+// Same caps as the deterministic parser (deterministic-parser.ts) — applied
+// here too so a verbose AI response can't blow past what the profile-review
+// UI is designed to render, and so prompts stay bounded regardless of how
+// many active tags/roles/regions this deployment ends up with.
+const MAX_POSITIONS = 8;
+const MAX_MATCHED_TAGS = 15;
+const MAX_MATCHED_TARGET_ROLES = 4;
+// A résumé this long is already far past anything realistic; truncating
+// protects against pathological input inflating request cost/latency rather
+// than reflecting any real document we expect to see.
+const MAX_INPUT_CHARS = 20_000;
+
+const AI_MODEL = "claude-sonnet-5";
+
+const EXTRACTION_TOOL_NAME = "extract_resume_data";
+
+function labelListForPrompt(labels: KnownLabel[]): string {
+  return labels.map((l) => `${l.id}: ${l.labelHe} / ${l.labelEn}`).join("\n");
+}
+
+function buildExtractionTool(context: ResumeParserContext): Anthropic.Tool {
+  return {
+    name: EXTRACTION_TOOL_NAME,
+    description:
+      "Records structured data extracted from a résumé's text: employment history, current role, and any of the given " +
+      "known skill/domain, target-role, and region labels that genuinely appear in the résumé.",
+    input_schema: {
+      type: "object",
+      properties: {
+        positions: {
+          type: "array",
+          description: "Employment history, most recent first. Omit positions you can't find a real company and title for — never invent one.",
+          items: {
+            type: "object",
+            properties: {
+              companyRaw: { type: "string", description: "Employer name exactly as written in the résumé." },
+              title: { type: "string", description: "Job title exactly as written in the résumé." },
+              startYear: { type: "integer" },
+              startMonth: { type: "integer", description: "1-12. Use 1 if only a year is given." },
+              endYear: { type: ["integer", "null"], description: "null if this is the current/ongoing position." },
+              endMonth: { type: ["integer", "null"] },
+              isCurrent: { type: "boolean", description: "True only if the résumé explicitly marks this as present/ongoing (e.g. \"present\", \"כיום\", \"הווה\")." },
+            },
+            required: ["companyRaw", "title", "startYear", "startMonth", "endYear", "endMonth", "isCurrent"],
+          },
+        },
+        currentRoleTitleGuess: {
+          type: ["string", "null"],
+          description: "The title of the current/most recent position, or null if unclear.",
+        },
+        matchedTagIds: {
+          type: "array",
+          items: { type: "string" },
+          description: `Ids (from the list below, verbatim — never a label or an invented id) of skills/domains genuinely evidenced by the résumé:\n${labelListForPrompt(context.knownTags)}`,
+        },
+        matchedTargetRoleIds: {
+          type: "array",
+          items: { type: "string" },
+          description: `Ids (from the list below, verbatim) of target roles this résumé's experience matches:\n${labelListForPrompt(context.knownTargetRoles)}`,
+        },
+        matchedRegionId: {
+          type: ["string", "null"],
+          description: `Id (from the list below, verbatim) of the single best-matching region the candidate is based in/near, or null if none is indicated:\n${labelListForPrompt(context.knownRegions)}`,
+        },
+        shortIntroGuess: {
+          type: ["string", "null"],
+          description:
+            "A single sentence (max 400 characters), in the résumé's own language, drawn from an existing self-written " +
+            "summary/about-me section — not composed or paraphrased by you. null if the résumé has no such section.",
+        },
+        aiSummaryGuess: {
+          type: ["string", "null"],
+          description:
+            "A single warm, light, casual-sounding sentence (max 400 characters), written in first person, ALWAYS in " +
+            "Hebrew regardless of what language the résumé itself is written in — this text is shown directly to other " +
+            "real users on a professional-matching profile, so it must read like a natural, friendly Hebrew " +
+            "self-introduction a person would actually write about themselves, not a stiff translated résumé summary. " +
+            "Unlike shortIntroGuess, this one you DO compose/paraphrase yourself (in Hebrew) based on the résumé's " +
+            "overall content (role, experience, focus areas) — it does not need to be quoted from an existing summary " +
+            "section, and does not need to preserve the résumé's original wording or language. Still ground it only in " +
+            "what the résumé actually supports; null if the résumé is too sparse to responsibly compose one.",
+        },
+        fullNameGuess: {
+          type: ["string", "null"],
+          description: "The candidate's full name, exactly as written in the résumé (e.g. a header line or a \"Name:\" label). null if not stated.",
+        },
+        phoneGuess: {
+          type: ["string", "null"],
+          description: "The candidate's phone number exactly as written in the résumé. null if none is present.",
+        },
+        linkedInUrlGuess: {
+          type: ["string", "null"],
+          description: "The candidate's LinkedIn profile URL exactly as written in the résumé. null if none is present.",
+        },
+      },
+      required: [
+        "positions",
+        "currentRoleTitleGuess",
+        "matchedTagIds",
+        "matchedTargetRoleIds",
+        "matchedRegionId",
+        "shortIntroGuess",
+        "aiSummaryGuess",
+        "fullNameGuess",
+        "phoneGuess",
+        "linkedInUrlGuess",
+      ],
+    },
+  };
+}
+
+const SYSTEM_PROMPT =
+  "You extract structured data from résumé/CV text for a job-matching product. Only report information that is " +
+  "actually present in the text — never infer, guess, or fabricate a company, title, date, or skill that isn't " +
+  "there. When uncertain, omit the field (use null or leave it out of an array) rather than guessing. Every id you " +
+  "return for a matched tag/target-role/region must be copied verbatim from the id list given for that " +
+  "field — never a label, and never an id you weren't given.";
+
+function isKnownId(id: unknown, labels: KnownLabel[]): id is string {
+  return typeof id === "string" && labels.some((l) => l.id === id);
+}
+
+function coercePosition(raw: unknown): CandidatePosition | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.companyRaw !== "string" || !p.companyRaw.trim()) return null;
+  if (typeof p.title !== "string") return null;
+  if (typeof p.startYear !== "number" || typeof p.startMonth !== "number") return null;
+  return {
+    companyRaw: p.companyRaw.trim(),
+    title: p.title.trim(),
+    startYear: p.startYear,
+    startMonth: Math.min(12, Math.max(1, p.startMonth)),
+    endYear: typeof p.endYear === "number" ? p.endYear : null,
+    endMonth: typeof p.endMonth === "number" ? Math.min(12, Math.max(1, p.endMonth)) : null,
+    isCurrent: p.isCurrent === true,
+  };
+}
+
+/** Turns the tool-use input Claude returned into a trustworthy ExtractedResumeText — every array/id is capped and validated against the known-label sets rather than trusted as-is (the tool schema and system prompt constrain the model, this is the actual enforcement). */
+function toExtractedResumeText(input: unknown, context: ResumeParserContext): ExtractedResumeText {
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+
+  const positions = (Array.isArray(raw.positions) ? raw.positions : [])
+    .map(coercePosition)
+    .filter((p): p is CandidatePosition => p !== null)
+    .slice(0, MAX_POSITIONS);
+
+  const matchedTagIds = [
+    ...new Set((Array.isArray(raw.matchedTagIds) ? raw.matchedTagIds : []).filter((id) => isKnownId(id, context.knownTags))),
+  ].slice(0, MAX_MATCHED_TAGS);
+
+  const matchedTargetRoleIds = [
+    ...new Set(
+      (Array.isArray(raw.matchedTargetRoleIds) ? raw.matchedTargetRoleIds : []).filter((id) =>
+        isKnownId(id, context.knownTargetRoles),
+      ),
+    ),
+  ].slice(0, MAX_MATCHED_TARGET_ROLES);
+
+  const matchedRegionId = isKnownId(raw.matchedRegionId, context.knownRegions) ? raw.matchedRegionId : null;
+
+  const shortIntroGuess = typeof raw.shortIntroGuess === "string" && raw.shortIntroGuess.trim() ? raw.shortIntroGuess.trim().slice(0, 400) : null;
+
+  const aiSummaryGuess = typeof raw.aiSummaryGuess === "string" && raw.aiSummaryGuess.trim() ? raw.aiSummaryGuess.trim().slice(0, 400) : null;
+
+  const currentRoleTitleGuess = typeof raw.currentRoleTitleGuess === "string" && raw.currentRoleTitleGuess.trim() ? raw.currentRoleTitleGuess.trim() : null;
+
+  const fullNameGuess = typeof raw.fullNameGuess === "string" && raw.fullNameGuess.trim() ? raw.fullNameGuess.trim().slice(0, 100) : null;
+
+  // Re-validate against the same strict digit-pattern/URL-pattern checks the
+  // deterministic parser uses, rather than trusting Claude's raw string
+  // as-is — the model can copy a number/URL wrong just as easily as it can
+  // fabricate one, and these fields are treated as sensitive by the privacy
+  // engine once shared.
+  const phoneGuess = typeof raw.phoneGuess === "string" ? extractPhoneGuess(raw.phoneGuess) : null;
+  const linkedInUrlGuess = typeof raw.linkedInUrlGuess === "string" ? extractLinkedInGuess(raw.linkedInUrlGuess) : null;
+
+  return {
+    positions,
+    currentRoleTitleGuess,
+    matchedTagIds,
+    matchedTargetRoleIds,
+    matchedRegionId,
+    shortIntroGuess,
+    aiSummaryGuess,
+    fullNameGuess,
+    phoneGuess,
+    linkedInUrlGuess,
+  };
+}
+
 /**
- * Documented, NOT wired, NOT network-capable placeholder — throws on
- * construction exactly like `S3Storage` (`src/shared/storage.ts`) throws
- * until a real implementation exists, rather than silently returning empty
- * or fabricated data. This means flipping `RESUME_PARSER=ai` before a real
- * implementation exists fails loudly and immediately instead of causing a
- * silent accuracy regression (or, worse, a real API call nobody reviewed).
+ * The wired default: sends the résumé's plain text (plus this deployment's
+ * known label lists) to the Claude API and asks it to call
+ * `extract_resume_data` (tool-use / forced function-calling) with structured
+ * output, rather than parsing free-form prose — see the module doc comment
+ * above for the privacy/accuracy tradeoff this represents and
+ * `docs/resume-extraction-approach.md` for the full comparison.
  *
- * To make this real: implement `parse()` against an actual provider (e.g.
- * the Claude API — see `docs/resume-extraction-approach.md`), read the key
- * from `env.RESUME_AI_API_KEY`, add a user-facing disclosure that an AI
- * service saw the résumé's content, and get an explicit product decision to
- * enable it — this is a real privacy-relevant capability change, not a
- * drop-in swap.
+ * The Anthropic client is injectable (constructor param) purely so tests can
+ * supply a fake with no real network call — mirroring how `MalwareScanner`/
+ * `Storage` are structured for testability elsewhere in this codebase.
  */
-class AiResumeParser implements ResumeParser {
-  constructor() {
-    throw new Error(
-      "AiResumeParser is not implemented. See the ResumeParser doc comment in src/modules/resumes/parser.ts " +
-        "and docs/resume-extraction-approach.md before wiring RESUME_PARSER=ai to anything real.",
-    );
-  }
-  parse(): ExtractedResumeText {
-    throw new Error("unreachable");
+export class AiResumeParser implements ResumeParser {
+  constructor(private readonly client: Anthropic = new Anthropic({ apiKey: env.RESUME_AI_API_KEY })) {}
+
+  async parse(text: string, context: ResumeParserContext): Promise<ExtractedResumeText> {
+    const truncated = text.length > MAX_INPUT_CHARS ? text.slice(0, MAX_INPUT_CHARS) : text;
+
+    const response = await this.client.messages.create({
+      model: AI_MODEL,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      tools: [buildExtractionTool(context)],
+      tool_choice: { type: "tool", name: EXTRACTION_TOOL_NAME },
+      messages: [{ role: "user", content: `Résumé text:\n\n${truncated}` }],
+    });
+
+    const toolUse = response.content.find((block): block is Anthropic.ToolUseBlock => block.type === "tool_use");
+    if (!toolUse) throw new Error("AiResumeParser: Claude response contained no tool_use block");
+
+    return toExtractedResumeText(toolUse.input, context);
   }
 }
 
@@ -125,7 +295,7 @@ let parser: ResumeParser | null = null;
 
 export function getResumeParser(): ResumeParser {
   if (!parser) {
-    parser = env.RESUME_PARSER === "ai" ? new AiResumeParser() : new DeterministicResumeParser();
+    parser = env.RESUME_PARSER === "deterministic" ? new DeterministicResumeParser() : new AiResumeParser();
   }
   return parser;
 }

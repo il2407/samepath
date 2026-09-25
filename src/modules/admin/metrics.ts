@@ -23,6 +23,7 @@ export async function getMarketplaceHealthMetrics() {
     openReports,
     openContentReports,
     openTakedowns,
+    pendingUserApprovals,
   ] = await Promise.all([
     prisma.user.count({ where: { status: "ACTIVE" } }),
     prisma.professionalProfile.count({ where: { status: "ACTIVE" } }),
@@ -47,6 +48,7 @@ export async function getMarketplaceHealthMetrics() {
     prisma.report.count({ where: { status: "OPEN" } }),
     prisma.contentReport.count({ where: { status: "OPEN" } }),
     prisma.takedownRequest.count({ where: { status: "OPEN" } }),
+    prisma.user.count({ where: { status: "PENDING_APPROVAL", role: "MEMBER" } }),
   ]);
 
   const groupFillRate =
@@ -69,5 +71,6 @@ export async function getMarketplaceHealthMetrics() {
     pendingModerationCount: pendingModeration,
     openReportsCount: openReports + openContentReports,
     openTakedownsCount: openTakedowns,
+    pendingUserApprovals,
   };
 }

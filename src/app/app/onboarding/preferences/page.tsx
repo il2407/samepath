@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
 import { getOnboardingStep, getOnboardingOverviewData } from "@/modules/profiles/service";
-import { listLanguages } from "@/modules/reference-data/service";
 import { PreferencesStepForm, type PreferencesStepInitial } from "@/modules/profiles/PreferencesStepForm";
 
 export const metadata: Metadata = { title: "העדפות חיבור — SamePath" };
@@ -25,13 +24,15 @@ export default async function OnboardingPreferencesPage({ searchParams }: PagePr
     if (step === "done") redirect("/app");
   }
 
-  const languages = await listLanguages();
-  const mappedLanguages = languages.map((l) => ({ id: l.id, labelHe: l.labelHe }));
+  const data = await getOnboardingOverviewData(user.id);
+  if (!data) redirect("/app/onboarding/profile");
+  const { profile } = data;
+  // Own years of experience, as extracted from the CV in step 1 — used to
+  // pre-select a sensible default peer-experience range so the user doesn't
+  // have to type numbers in on this step.
+  const ownExperienceYears = profile.experienceMonths > 0 ? Math.floor(profile.experienceMonths / 12) : null;
 
   if (isReEditing) {
-    const data = await getOnboardingOverviewData(user.id);
-    if (!data) redirect("/app/onboarding/preferences");
-    const { profile } = data;
     const cp = profile.connectionPreference;
 
     const initial: PreferencesStepInitial | undefined = cp
@@ -42,7 +43,6 @@ export default async function OnboardingPreferencesPage({ searchParams }: PagePr
           cadence: cp.cadence,
           mode: cp.mode,
           genderPreference: cp.genderPreference,
-          languageId: cp.languageId,
           reasons: cp.reasons,
           availability: profile.availabilitySlots.map((s) => ({
             dayOfWeek: s.dayOfWeek,
@@ -57,7 +57,11 @@ export default async function OnboardingPreferencesPage({ searchParams }: PagePr
         <h1 className="text-2xl font-bold text-ink">עריכת העדפות חיבור</h1>
         <p className="mt-2 text-muted">אפשר לתקן כל שדה ולהמשיך הלאה.</p>
         <div className="mt-8">
-          <PreferencesStepForm languages={mappedLanguages} initial={initial} submitLabel="שמירה והמשך" />
+          <PreferencesStepForm
+            initial={initial}
+            submitLabel="שמירה והמשך"
+            ownExperienceYears={ownExperienceYears}
+          />
         </div>
       </div>
     );
@@ -70,7 +74,7 @@ export default async function OnboardingPreferencesPage({ searchParams }: PagePr
         השלב האחרון לפני סקירה — לאחריה תוכלו לאשר ולהפעיל את הפרופיל ולהתחיל לראות הצעות התאמה אנונימיות.
       </p>
       <div className="mt-8">
-        <PreferencesStepForm languages={mappedLanguages} />
+        <PreferencesStepForm ownExperienceYears={ownExperienceYears} />
       </div>
     </div>
   );

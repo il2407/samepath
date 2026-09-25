@@ -11,7 +11,7 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log("Seeding reference data (fields, roles, bands, languages, regions, tags)...");
+  console.log("Seeding reference data (fields, roles, bands, regions, tags)...");
   await seedReferenceData(prisma);
 
   console.log("Seeding fictional companies...");

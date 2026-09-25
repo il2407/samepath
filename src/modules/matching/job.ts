@@ -1,8 +1,22 @@
 import "server-only";
 import { prisma } from "@/shared/db";
 import { getMailer } from "@/modules/notifications/mailer";
+import { createNotification, NOTIFICATION_TYPES } from "@/modules/notifications/service";
 import { generateSuggestionsForUser } from "@/modules/matching/service";
 import type { JobRun, JobRunStatus } from "@/generated/prisma/client";
+
+/** Statuses under which a MatchSuggestion is still visible to a user as an
+ * open, undecided suggestion — mirrors matching/service.ts's own
+ * (unexported) VISIBLE_STATUSES; duplicated here rather than exported from
+ * that read-only-from-this-file module, since it's a 3-item literal that
+ * changes exactly as often as the match status machine itself does. */
+const VISIBLE_SUGGESTION_STATUSES = ["PROPOSED", "INTERESTED_BY_A", "INTERESTED_BY_B"] as const;
+
+/** Dedup window for the in-app "no matches available right now" notice —
+ * deliberately much longer than NOTIFICATION_DEDUP_WINDOW_MS below, since
+ * this fires on every job run for a user with nothing open and would
+ * otherwise spam the notification list once per run. */
+const NO_MATCHES_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The first piece of scheduled-job infrastructure in this codebase — see
@@ -197,7 +211,37 @@ async function notifyNewSuggestions(userId: string, newCount: number): Promise<b
   await prisma.notificationLog.create({
     data: { userId, type: NEW_MATCHES_NOTIFICATION_TYPE, payload: { newCount } },
   });
+  await createNotification(userId, NOTIFICATION_TYPES.NEW_MATCH, { newCount });
   return true;
+}
+
+/**
+ * Fires the in-app (no email) "not enough matches right now" notice for a
+ * user whose run just produced zero new suggestions AND who has zero
+ * currently-open ones left to look at — i.e. the same condition
+ * app/matches/page.tsx's empty state renders. Deduped per
+ * NO_MATCHES_DEDUP_WINDOW_MS via the Notification table itself (no
+ * NotificationLog entry, since no email is sent here).
+ */
+async function notifyNoMatchesIfNeeded(userId: string): Promise<void> {
+  const openCount = await prisma.matchSuggestion.count({
+    where: {
+      OR: [{ userAId: userId }, { userBId: userId }],
+      status: { in: [...VISIBLE_SUGGESTION_STATUSES] },
+    },
+  });
+  if (openCount > 0) return;
+
+  const recent = await prisma.notification.findFirst({
+    where: {
+      userId,
+      type: NOTIFICATION_TYPES.NO_MATCHES_AVAILABLE,
+      createdAt: { gte: new Date(Date.now() - NO_MATCHES_DEDUP_WINDOW_MS) },
+    },
+  });
+  if (recent) return;
+
+  await createNotification(userId, NOTIFICATION_TYPES.NO_MATCHES_AVAILABLE);
 }
 
 /**
@@ -275,6 +319,9 @@ async function processUserWithRetry(userId: string): Promise<ProcessUserResult> 
 
   try {
     const notificationsSent = await withRetry(() => notifyForNewlyCreatedSuggestions(userId, created));
+    if (created === 0) {
+      await withRetry(() => notifyNoMatchesIfNeeded(userId));
+    }
     return { created, notificationsSent };
   } catch (notifyErr) {
     return { created, notificationsSent: 0, notifyError: sanitizeError(notifyErr) };

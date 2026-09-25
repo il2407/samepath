@@ -6,12 +6,14 @@ import { requireUser } from "@/modules/auth/session";
 import {
   acceptMeetingProposal,
   attachMeetLink,
+  attachMeetLinkForConnection,
   blockFromConnection,
   clearConnectionGuide,
   counterProposeMeeting,
   declineMeetingProposal,
   endConnection,
   generateMeetLink,
+  generateMeetLinkForConnection,
   listGuideOptionsForConnection,
   markMeeting,
   MeetingProposalError,
@@ -355,6 +357,51 @@ export async function generateMeetLinkAction(input: unknown): Promise<ActionStat
 
   try {
     await generateMeetLink(user.id, parsed.data.connectionId, parsed.data.proposalId);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Simplified connection room: attach/generate a Meet link directly on a
+// connection, with no proposal-negotiation UI and no proposalId from the
+// caller. Delegates to service.ts's getOrCreateMeetLinkHolderProposal, which
+// reuses an existing proposal or creates a minimal placeholder row to hold
+// the link — see that function's doc comment for the concurrency handling.
+// ---------------------------------------------------------------------------
+
+const attachMeetLinkForConnectionSchema = z.object({
+  connectionId: z.string().min(1),
+  meetLink: z.string().trim().min(1).max(500),
+});
+
+export async function attachMeetLinkForConnectionAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = attachMeetLinkForConnectionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await attachMeetLinkForConnection(user.id, parsed.data.connectionId, parsed.data.meetLink);
+    revalidatePath(`/app/connections/${parsed.data.connectionId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: meetingProposalErrorMessage(error) };
+  }
+}
+
+const generateMeetLinkForConnectionSchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+export async function generateMeetLinkForConnectionAction(input: unknown): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = generateMeetLinkForConnectionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+
+  try {
+    await generateMeetLinkForConnection(user.id, parsed.data.connectionId);
     revalidatePath(`/app/connections/${parsed.data.connectionId}`);
     return { ok: true };
   } catch (error) {

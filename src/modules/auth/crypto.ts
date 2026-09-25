@@ -1,9 +1,15 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scryptSync } from "node:crypto";
 import { env } from "@/shared/env";
 
 /** Opaque URL-safe token for magic links and session identifiers. */
 export function generateToken(): string {
   return randomBytes(32).toString("base64url");
+}
+
+/** Cryptographically-random numeric code (e.g. "042917") for manual entry, such as email OTPs. */
+export function generateNumericCode(digits = 6): string {
+  const max = 10 ** digits;
+  return randomInt(0, max).toString().padStart(digits, "0");
 }
 
 /**

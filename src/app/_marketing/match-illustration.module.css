@@ -1,0 +1,99 @@
+.match {
+  width: 100%;
+  max-width: 520px;
+  margin-inline: auto;
+  color: var(--color-ink);
+}
+.caption, .cardTop, .bottom, .reasonHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.caption { font-size: 12px; padding-block: 12px; border-bottom: 1px solid var(--color-border); }
+.example { color: var(--color-muted); font-size: 10px; }
+.stage { position: relative; height: 425px; isolation: isolate; }
+.orbit { position: absolute; inset: 34px 25px; border: 1px solid #c5cbb9; border-radius: 50%; transform: rotate(-25deg); }
+.orbit::after { content: ""; position: absolute; inset: 20px -20px; border: 1px dashed #c5cbb9; border-radius: 50%; }
+.path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.path path { stroke: #b76145; stroke-width: 2; stroke-dasharray: 1; }
+.card { position: absolute; width: 79%; padding: 15px 18px; background: #fffdf8; border: 1px solid #b9bdac; box-shadow: 4px 5px 0 #252b270b; }
+.self { --rest-angle: 2deg; top: 21px; right: 5px; transform: rotate(2deg); }
+.partner { --rest-angle: -3deg; bottom: 13px; left: 5px; transform: rotate(-3deg); background: #eef0e5; }
+.cardTop { margin-bottom: 10px; font-size: 11px; color: var(--color-primary); }
+.number { font-family: monospace; color: #7b806e; font-size: 10px; }
+.identity { display: flex; align-items: center; gap: 10px; }
+.identity h3 { font-size: 16px; font-weight: 600; }
+.identity p { font-size: 12px; color: var(--color-muted); margin-top: 3px; }
+.avatar { width: 42px; height: 45px; padding: 5px; flex-shrink: 0; color: #29483e; background: #dce5d1; border-radius: 50% 50% 3px 3px; }
+.partner .avatar { background: #e9b38b; color: #75432e; }
+.tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; font-size: 10px; }
+.tags span { padding: 3px 7px; border: 1px solid #d0d5c4; }
+.tags span:first-child { background: #dce5d1; border-color: #bbc7ac; }
+.cardFooter { display: flex; align-items: center; gap: 7px; padding-top: 10px; margin-top: 10px; border-top: 1px solid #d5d3c7; font-size: 10px; color: var(--color-muted); }
+.connection { position: absolute; z-index: 2; top: 198px; left: 50%; transform: translateX(-50%) rotate(-5deg); display: flex; align-items: center; gap: 9px; white-space: nowrap; background: #29483e; color: #fffdf8; padding: 10px 17px; box-shadow: 3px 4px 0 #252b2714; font-size: 13px; }
+.connection svg { width: 28px; height: 20px; }
+.marginNote { position: absolute; bottom: 2px; right: 3px; writing-mode: vertical-rl; font-size: 10px; color: #92452f; transform: rotate(5deg); }
+.reasons { position: relative; margin-top: 18px; padding: 17px 20px; background: #ede5d8; border: 1px solid #d5c7b5; }
+.reasons::before { content: ""; position: absolute; top: -5px; right: 20px; width: 42px; height: 9px; background: #b76145; transform: rotate(-4deg); }
+.reasonHeading h3 { font-size: 17px; }
+.reasonHeading > span { color: #92452f; font-size: 26px; line-height: 1; }
+.reasons ul { display: grid; gap: 11px; margin-top: 14px; list-style: none; padding: 0; }
+.reasons li { display: flex; align-items: center; gap: 10px; }
+.check { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid #adb89b; border-radius: 50%; color: #29483e; font-size: 12px; flex-shrink: 0; }
+.reasons strong { font-size: 12px; font-weight: 600; }
+.reasons li p { font-size: 11px; color: var(--color-muted); margin-top: 1px; }
+.bottom { margin-top: 12px; align-items: flex-start; font-size: 10px; color: var(--color-muted); }
+.bottom p { max-width: 25ch; line-height: 1.6; }
+.bottom button { display: flex; align-items: center; gap: 5px; padding: 4px 0; color: var(--color-primary); cursor: pointer; border-bottom: 1px solid #b9bdac; white-space: nowrap; }
+.bottom button:hover { color: #92452f; border-color: currentColor; }
+.bottom button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .self { animation: meetSelf 1.6s cubic-bezier(.22,1,.36,1) backwards; }
+  .partner { animation: meetPartner 1.6s .2s cubic-bezier(.22,1,.36,1) backwards; }
+  .path path { animation: drawPath 1.4s .5s both; }
+  .connection { animation: connect 650ms 1.2s both; }
+  .reasons li { animation: reasonIn 600ms 1.65s both; }
+  .reasons li:nth-child(2) { animation-delay: 1.9s; }
+  .reasons li:nth-child(3) { animation-delay: 2.15s; }
+
+}
+@keyframes meetSelf { from { opacity: 0; transform: translate(15px, -14px) rotate(7deg); } to { opacity: 1; transform: rotate(2deg); } }
+@keyframes meetPartner { from { opacity: 0; transform: translate(-15px, 16px) rotate(-8deg); } to { opacity: 1; transform: rotate(-3deg); } }
+@keyframes drawPath { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes connect { from { opacity: 0; transform: translateX(-50%) rotate(-10deg) scale(.8); } to { opacity: 1; transform: translateX(-50%) rotate(-5deg) scale(1); } }
+@keyframes reasonIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 380px) {
+  .card { width: 88%; padding: 13px; }
+  .identity h3 { font-size: 14px; }
+  .tags { gap: 4px; }
+  .tags span { padding-inline: 5px; }
+  .marginNote { display: none; }
+  .caption { font-size: 11px; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card { transition: border-color 250ms, box-shadow 250ms; }
+  .card:hover { border-color: #83937b; box-shadow: 7px 12px 0 #252b2710, 0 18px 30px -20px #29483e55; }
+  .stage:has(.card:hover) .connection { background: #365e4c; }
+  .stage:has(.card:hover) .tags span:first-child { background: #c6d6b6; border-color: #83937b; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .card {
+    transform: perspective(800px) rotate(var(--rest-angle)) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+    transition: transform 200ms ease-out, translate 300ms ease, scale 300ms ease, border-color 250ms, box-shadow 250ms;
+  }
+  .card:hover { translate: 0 -7px; scale: 1.025; }
+  .avatar { transition: transform 350ms ease; }
+  .card:hover .avatar { transform: translateY(-3px) rotate(-7deg); }
+  .connection { transition: scale 350ms ease, background 250ms; }
+  .stage:has(.card:hover) .connection { scale: 1.06; }
+  .stage:has(.card:hover) .connection svg { animation: linkNudge 550ms ease; }
+  .orbit { transition: transform 650ms ease, border-color 350ms; }
+  .stage:has(.card:hover) .orbit { transform: rotate(-16deg) scale(1.025); border-color: #83937b; }
+}
+@keyframes linkNudge {
+  0%, 100% { transform: rotate(0); }
+  35% { transform: rotate(-15deg); }
+  70% { transform: rotate(10deg); }
+}

@@ -27,17 +27,22 @@ describe("isValidEmail", () => {
 });
 
 describe("isValidPassword", () => {
-  it("accepts passwords of 8-200 characters", () => {
-    expect(isValidPassword("12345678")).toBe(true);
-    expect(isValidPassword("a".repeat(200))).toBe(true);
+  it("accepts 8-200 character passwords that mix a letter and a number", () => {
+    expect(isValidPassword("abcd1234")).toBe(true);
+    expect(isValidPassword(`a1${"a".repeat(198)}`)).toBe(true);
+  });
+
+  it("rejects passwords missing a letter or a number, even at valid lengths", () => {
+    expect(isValidPassword("12345678")).toBe(false);
+    expect(isValidPassword("a".repeat(200))).toBe(false);
   });
 
   it("rejects passwords shorter than 8 characters", () => {
-    expect(isValidPassword("1234567")).toBe(false);
+    expect(isValidPassword("a1234567".slice(0, 7))).toBe(false);
     expect(isValidPassword("")).toBe(false);
   });
 
   it("rejects passwords longer than 200 characters", () => {
-    expect(isValidPassword("a".repeat(201))).toBe(false);
+    expect(isValidPassword(`a1${"a".repeat(199)}`)).toBe(false);
   });
 });

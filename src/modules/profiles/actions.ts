@@ -13,6 +13,7 @@ import {
 } from "@/modules/profiles/service";
 import { uploadProfilePhoto, deleteProfilePhoto } from "@/modules/profiles/photo";
 import { rateLimit } from "@/shared/rate-limit";
+import { generateSuggestionsForUser } from "@/modules/matching/service";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -32,9 +33,9 @@ const stepOneSchema = z.object({
   regionId: z.string().nullable(),
   shortIntro: z.string().max(400, "עד 400 תווים"),
   tagIds: z.array(z.string()),
-  languageIds: z.array(z.string()).min(1, "יש לבחור לפחות שפה אחת"),
   positions: z.array(positionSchema),
   gender: z.enum(["MALE", "FEMALE"]).nullable().optional(),
+  linkedInUrl: z.string().min(1, "יש להזין קישור לפרופיל LinkedIn").url("קישור לא תקין"),
 });
 
 export async function saveProfileStepOneAction(input: unknown): Promise<ActionState> {
@@ -54,7 +55,14 @@ export async function updateProfileSettingsAction(input: unknown): Promise<Actio
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
   await saveProfileStepOne(user.id, parsed.data);
+  // Profile fields feed scoring directly (target roles, field, skills,
+  // region) — regenerate suggestions synchronously so existing
+  // empty slots reflect the new profile immediately, same call the manual
+  // "Find matches" button and onboarding activation use (matching/job.ts's
+  // "single shared unit of work" rule; see generateSuggestionsForUser).
+  await generateSuggestionsForUser(user.id);
   revalidatePath("/app/settings/profile");
+  revalidatePath("/app/matches");
   return { ok: true };
 }
 
@@ -66,27 +74,34 @@ const blockedCompanySchema = z.object({
 
 const privacyStepSchema = z
   .object({
-    employerConfirmed: z.boolean(),
     additionalBlockedCompanies: z.array(blockedCompanySchema),
     fullName: z.string().optional(),
     shareCompanyPreMatch: z.boolean(),
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
+    // shareEmailPostMatch/sharePhonePostMatch default to false here — the
+    // onboarding step has no email/phone-reveal UI (contact info is only
+    // ever opted into later, from settings; see PrivacyStepForm.tsx and
+    // dto.ts's design note), so onboarding always submits the off default.
+    shareEmailPostMatch: z.boolean().default(false),
+    sharePhonePostMatch: z.boolean().default(false),
     // No blockEntireCorporateGroup (backlog item 6 — no longer
-    // user-configurable), no shareLinkedInPostMatch/linkedInUrl (backlog
-    // item 11 — LinkedIn is never disclosed), and no
-    // sharePreciseLocationPostMatch/shareEmailPostMatch/sharePhonePostMatch
-    // (backlog item 10 — automatic reveal at the CONNECTED stage) — see
-    // PrivacyStepInput in profiles/service.ts.
+    // user-configurable), and no sharePreciseLocationPostMatch (backlog item
+    // 9 — automatic reveal at the CONNECTED stage) — see PrivacyStepInput in
+    // profiles/service.ts. No LinkedIn here anymore either — it moved to the
+    // profile step (stepOneSchema above), required there, and always
+    // reveals automatically at the CONNECTED stage.
     //
     // No resumeRetentionPreference here — see the comment on
     // PrivacyStepInput in profiles/service.ts for why the onboarding step no
     // longer collects this (the duplicated résumé-retention controls fix).
-  })
-  .refine((data) => data.employerConfirmed, {
-    message: "יש לאשר את המעסיק הנוכחי כדי להמשיך",
-    path: ["employerConfirmed"],
+    //
+    // No employerConfirmed here (WS5) — the explicit checkbox/hard gate was
+    // removed from this step; completePrivacyOnboarding now sets
+    // currentCompanyConfirmedAt implicitly, and the overview page's final
+    // review screen is where the confirmed employer is shown and can be
+    // edited before activateProfile re-checks it.
   })
   .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
     message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
@@ -111,9 +126,17 @@ const privacySettingsSchema = z
     shareFullNamePostMatch: z.boolean(),
     sharePhotoPostMatch: z.boolean(),
     phoneNumber: z.string().optional(),
-    resumeRetentionPreference: z.enum(["DELETE_AFTER_CONFIRMATION", "KEEP"]),
-    // See the matching comment on privacyStepSchema above — same fields
-    // deliberately removed, same reasons.
+    // Unlike privacyStepSchema above, this settings-page schema requires
+    // these explicitly (no default) — PrivacySettingsForm always has the
+    // email/phone-reveal toggles and submits real values for both.
+    shareEmailPostMatch: z.boolean(),
+    sharePhonePostMatch: z.boolean(),
+    // See the matching comment on privacyStepSchema above re: which fields
+    // are deliberately omitted — no LinkedIn here either now, it moved to
+    // the profile-step settings form (updateProfileSettingsAction). No
+    // resumeRetentionPreference here either now — the settings-page
+    // resume-retention choice was removed entirely; the file is always
+    // kept, see resumes/service.ts.
   })
   .refine((data) => !data.shareFullNamePostMatch || !!data.fullName?.trim(), {
     message: "יש להזין שם מלא כדי לחשוף אותו לאחר אישור הדדי",
@@ -126,7 +149,12 @@ export async function updatePrivacySettingsAction(input: unknown): Promise<Actio
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
   await updatePrivacySettings(user.id, parsed.data);
+  // Blocked companies feed the privacy hard-filter directly, so a change
+  // here can open up slots that were previously filtered out — regenerate
+  // synchronously, same shared call as updateProfileSettingsAction above.
+  await generateSuggestionsForUser(user.id);
   revalidatePath("/app/settings/privacy");
+  revalidatePath("/app/matches");
   return { ok: true };
 }
 
@@ -157,7 +185,6 @@ const preferencesStepSchema = z.object({
   cadence: z.enum(["ONE_TIME", "RECURRING", "BOTH"]),
   mode: z.enum(["ONLINE", "IN_PERSON", "BOTH"]),
   genderPreference: z.enum(["MALE", "FEMALE", "BOTH"]).optional(),
-  languageId: z.string().nullable(),
   timezone: z.string().min(1),
   reasons: z.array(connectionReasonEnum),
   availability: z.array(availabilitySlotSchema),
@@ -176,8 +203,14 @@ export async function completeConnectionPreferencesAction(input: unknown): Promi
 export async function confirmOnboardingAction(): Promise<void> {
   const user = await requireUser();
   await activateProfile(user.id);
+  // Generate the first batch of suggestions synchronously (same call the
+  // manual "Find matches" button uses) so app/matches/page.tsx already has
+  // results by the time the user's first click lands there, instead of
+  // showing an empty state until the next scheduled matching/job.ts run.
+  // The returned count feeds the welcome popup's "X new matches" copy.
+  const matchCount = await generateSuggestionsForUser(user.id);
   revalidatePath("/app", "layout");
-  redirect("/app");
+  redirect(`/app?welcome=1&matches=${matchCount}`);
 }
 
 export async function uploadProfilePhotoAction(formData: FormData): Promise<ActionState> {

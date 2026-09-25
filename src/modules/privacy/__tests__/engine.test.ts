@@ -312,7 +312,7 @@ describe("evaluatePrivacy — each hard filter wins even when everything else is
 
 describe("evaluatePrivacy — privacy always wins over everything else", () => {
   it("still rejects a same-company pair even when every other signal is ideal", () => {
-    // Same city, same language, perfect availability overlap, mutually
+    // Same city, perfect availability overlap, mutually
     // interested — a compatibility engine would score this pair very high.
     // The privacy gate must reject it regardless.
     const subject = profile({

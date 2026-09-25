@@ -12,7 +12,6 @@ function profile(overrides: Partial<ScoringProfile> = {}): ScoringProfile {
     professionalFieldId: "software-engineering",
     experienceMonths: 36,
     tagIds: ["typescript", "postgres"],
-    languageIds: ["he"],
     timezone: "Asia/Jerusalem",
     connectionFormat: "BOTH",
     connectionCadence: "BOTH",
@@ -88,7 +87,7 @@ describe("computeScoreBreakdown", () => {
 });
 
 describe("generateSafeReasons", () => {
-  it("returns only reasons above the relevance threshold, capped, and never raw scores", () => {
+  it("returns only reasons above the relevance threshold, capped, and never raw overall scores", () => {
     const breakdown = computeScoreBreakdown(profile(), profile());
     const reasons = generateSafeReasons(breakdown);
     expect(reasons.length).toBeGreaterThan(0);
@@ -96,8 +95,13 @@ describe("generateSafeReasons", () => {
     for (const reason of reasons) {
       expect(reason).toHaveProperty("labelHe");
       expect(typeof reason.labelHe).toBe("string");
-      // no numeric score fields leak through
-      expect(Object.keys(reason).sort()).toEqual(["code", "labelHe"]);
+      // each reason may carry its own safe per-factor percentage, but
+      // nothing beyond code/labelHe/percentage — no raw totalScore or
+      // privacy-gate internals leak through
+      expect(Object.keys(reason).sort()).toEqual(["code", "labelHe", "percentage"]);
+      expect(typeof reason.percentage).toBe("number");
+      expect(reason.percentage).toBeGreaterThanOrEqual(0);
+      expect(reason.percentage).toBeLessThanOrEqual(100);
     }
   });
 
@@ -106,15 +110,12 @@ describe("generateSafeReasons", () => {
       targetRoleIds: ["backend"],
       professionalFieldId: "software-engineering",
       tagIds: ["a"],
-      languageIds: ["he"],
       experienceMonths: 0,
     });
     const b = profile({
       targetRoleIds: ["design-lead"],
       professionalFieldId: "design",
       tagIds: ["b"],
-      languageIds: ["ru"],
-      timezone: "Asia/Jerusalem",
       availability: [{ dayOfWeek: 5, startMinute: 0, endMinute: 60 }],
       experienceMonths: 240,
       connectionMode: "IN_PERSON",

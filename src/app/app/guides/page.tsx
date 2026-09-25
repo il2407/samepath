@@ -1,138 +1,94 @@
+import { ContentProposal } from "@/modules/connections/ContentProposal";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/modules/auth/session";
-import {
-  GUIDE_CATEGORY_LABELS,
-  GUIDE_SESSION_FORMATS,
-  listPublishedGuides,
-  type GuideSessionFormat,
-} from "@/modules/guides/service";
+import { listPublishedGuides } from "@/modules/guides/service";
+import { getLessonTemplate, lessonTemplates } from "@/modules/guides/catalog";
+import { LessonWorkspace } from "@/modules/guides/LessonWorkspace";
+import styles from "@/modules/guides/lessons.module.css";
 import { Container } from "@/shared/ui/Container";
-import { connectionFormatLabels } from "@/modules/profiles/labels";
+import { FlowNav } from "../FlowNav";
 
 export const metadata: Metadata = { title: "מערכי מפגש — SamePath" };
 
-function isSessionFormat(value: string | undefined): value is GuideSessionFormat {
-  return GUIDE_SESSION_FORMATS.some((f) => f.value === value);
-}
+export default async function GuidesPage({
+  searchParams,
+}: PageProps<"/app/guides">) {
+  const user = await requireUser();
+  const query = await searchParams;
+  const connectionId = typeof query.connection === "string" ? query.connection : undefined;
+  const contextQuery = connectionId ? `&connection=${encodeURIComponent(connectionId)}` : "";
+  const back = connectionId ? { href: `/app/connections/${encodeURIComponent(connectionId)}`, label: "חזרה לחיבור" } : { href: "/app/guides", label: "חזרה למאגר התוכן" };
+  const category =
+    typeof query.category === "string" ? query.category : undefined;
+  const questionId =
+    typeof query.question === "string" ? query.question : undefined;
+  const template = getLessonTemplate(category);
 
-export default async function GuidesPage({ searchParams }: PageProps<"/app/guides">) {
-  await requireUser();
-  const params = await searchParams;
-  const formatParam = typeof params?.format === "string" ? params.format : undefined;
-  const category = typeof params?.category === "string" ? params.category : undefined;
-  const format = isSessionFormat(formatParam) ? formatParam : undefined;
-
-  const allGuides = await listPublishedGuides();
-
-  const intro = <h1 className="text-2xl font-bold text-ink">מערכי מפגש</h1>;
-
-  // Level 1: choose the session format (1:1 vs group).
-  if (!format) {
+  if (template)
     return (
-      <Container className="max-w-2xl py-10">
-        {intro}
-        <p className="mt-2 text-muted">
-          עזרה קלה לשיחה — לא חובה להשתמש בה, ואין צורך לדווח על סיום.
-          <br />
-          בחרו את סוג המפגש כדי לראות את מערכי המפגש המתאימים לו.
-        </p>
-
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          {GUIDE_SESSION_FORMATS.map((f) => {
-            const count = allGuides.filter((g) => g.format === f.value || g.format === "BOTH").length;
-            return (
-              <Link
-                key={f.value}
-                href={`/app/guides?format=${f.value}`}
-                className="block rounded-2xl border border-border bg-white p-5 hover:border-primary"
-              >
-                <p className="font-semibold text-ink">{f.title}</p>
-                <p className="mt-1 text-sm text-muted">{f.description}</p>
-                <p className="mt-2 text-xs text-muted">{count} מערכים</p>
-              </Link>
-            );
-          })}
-        </div>
+      <Container className="max-w-5xl py-10">
+        <FlowNav prev={back} />
+        <ContentProposal userId={user.id} contentKey={`template:${template.slug}`} connectionId={connectionId} />
+        <LessonWorkspace template={template} questionId={questionId} />
       </Container>
     );
-  }
 
-  const formatMeta = GUIDE_SESSION_FORMATS.find((f) => f.value === format)!;
-  const guidesForFormat = allGuides.filter((g) => g.format === format || g.format === "BOTH");
-
-  // Level 2: choose the kind of session (system design, coding, project pitch, ...).
-  if (!category) {
-    const categories: { key: string; label: string; count: number }[] = [];
-    for (const g of guidesForFormat) {
-      const key = g.category ?? "כללי";
-      const existing = categories.find((c) => c.key === key);
-      if (existing) existing.count += 1;
-      else categories.push({ key, label: GUIDE_CATEGORY_LABELS[key] ?? key, count: 1 });
-    }
-
-    return (
-      <Container className="max-w-2xl py-10">
-        <Link href="/app/guides" className="text-sm text-muted hover:text-ink">
-          ‹ מערכי מפגש
-        </Link>
-        <h1 className="mt-3 text-2xl font-bold text-ink">{formatMeta.title}</h1>
-        <p className="mt-2 text-muted">בחרו את סוג התוכן שהייתם רוצים למסגרת השיחה.</p>
-
-        <div className="mt-8 space-y-3">
-          {categories.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-8 text-center text-muted">
-              אין כרגע מערכי מפגש זמינים בפורמט הזה.
-            </div>
-          ) : (
-            categories.map((c) => (
-              <Link
-                key={c.key}
-                href={`/app/guides?format=${format}&category=${encodeURIComponent(c.key)}`}
-                className="block rounded-2xl border border-border bg-white p-5 hover:border-primary"
-              >
-                <p className="font-semibold text-ink">{c.label}</p>
-                <p className="mt-1 text-xs text-muted">{c.count} מערכים</p>
-              </Link>
-            ))
-          )}
-        </div>
-      </Container>
-    );
-  }
-
-  // Level 3: the guides within that kind of session.
-  const guidesInCategory = guidesForFormat.filter((g) => (g.category ?? "כללי") === category);
-  const categoryLabel = GUIDE_CATEGORY_LABELS[category] ?? category;
-
+  const guides = await listPublishedGuides();
   return (
-    <Container className="max-w-2xl py-10">
-      <Link href={`/app/guides?format=${format}`} className="text-sm text-muted hover:text-ink">
-        ‹ {formatMeta.title}
-      </Link>
-      <h1 className="mt-3 text-2xl font-bold text-ink">{categoryLabel}</h1>
-
-      <div className="mt-8 space-y-3">
-        {guidesInCategory.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-muted">
-            אין כרגע מערכי מפגש זמינים.
-          </div>
-        ) : (
-          guidesInCategory.map((g) => (
-            <Link
-              key={g.id}
-              href={`/app/guides/${g.id}?format=${format}&category=${encodeURIComponent(category)}`}
-              className="block rounded-2xl border border-border bg-white p-5 hover:border-primary"
-            >
-              <p className="font-semibold text-ink">{g.title}</p>
-              <p className="mt-1 text-sm text-muted">{g.purpose}</p>
-              <p className="mt-2 text-xs text-muted">
-                {connectionFormatLabels[g.format]} · כ-{g.suggestedDurationMinutes} דקות
-              </p>
-            </Link>
-          ))
-        )}
+    <Container className="max-w-5xl py-10">
+      <FlowNav prev={connectionId ? back : undefined} />
+      <header className={styles.header}>
+        <p className={styles.eyebrow}>מתרגלים יחד, מגיעים מוכנים</p>
+        <h1>מערכי מפגש ושאלות מראיונות</h1>
+        <p>
+          בחרו מה לתרגל. המבנה כבר מוכן — בוחרים שאלה, מחלקים תפקידים ומתחילים.
+        </p>
+        <div className={styles.meta}>
+          <span>4 סוגי תרגול</span>
+          <span>מבנה קבוע לכל סוג</span>
+          <span>שאלות המשך למראיין/ת</span>
+        </div>
+      </header>
+      <Link href={`/app/interviews${connectionId ? `?connection=${encodeURIComponent(connectionId)}` : ""}`} className="mb-6 inline-flex min-h-11 items-center text-sm font-medium text-primary-dark underline">לשאלות מראיונות מהקהילה ←</Link>
+      <div className={styles.cards}>
+        {lessonTemplates.map((item) => (
+          <Link
+            key={item.slug}
+            href={`/app/guides?category=${item.slug}${contextQuery}`}
+            className={styles.card}
+          >
+            <span className={styles.eyebrow}>{item.english}</span>
+            <h2>{item.title}</h2>
+            <p>{item.description}</p>
+            <div className={styles.cardFooter}>
+              <span>
+                {item.stages.reduce((sum, stage) => sum + stage.minutes, 0)}{" "}
+                דקות לסבב · {item.questions.length} שאלות
+              </span>
+              <span>למערך המפגש ←</span>
+            </div>
+          </Link>
+        ))}
       </div>
+      {guides.length > 0 && (
+        <details className={styles.additional} open={!!category}>
+          <summary>מערכים נוספים · היכרות, ליווי ותכנים מהמאגר</summary>
+          <p>כאן זמינים גם מערכים קודמים ותכנים נוספים שפורסמו.</p>
+          {guides
+            .filter((guide) => !category || guide.category === category)
+            .map((guide) => (
+              <Link key={guide.id} href={`/app/guides/${guide.id}${connectionId ? `?connection=${encodeURIComponent(connectionId)}` : ""}`}>
+                {guide.title} · {guide.suggestedDurationMinutes} דקות
+              </Link>
+            ))}
+          {category && !guides.some((guide) => guide.category === category) && (
+            <p>
+              לא נמצאו מערכים בקטגוריה הזו. אפשר לבחור אחד מסוגי התרגול למעלה.
+            </p>
+          )}
+        </details>
+      )}
     </Container>
   );
 }

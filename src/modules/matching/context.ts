@@ -8,7 +8,6 @@ export async function loadScoringProfile(userId: string): Promise<ScoringProfile
     include: {
       targetRoles: { select: { targetRoleId: true } },
       tags: { select: { tagId: true } },
-      languages: { select: { languageId: true } },
       connectionPreference: true,
       availabilitySlots: { select: { dayOfWeek: true, startMinute: true, endMinute: true } },
     },
@@ -20,7 +19,6 @@ export async function loadScoringProfile(userId: string): Promise<ScoringProfile
     professionalFieldId: profile.professionalFieldId,
     experienceMonths: profile.experienceMonths,
     tagIds: profile.tags.map((t) => t.tagId),
-    languageIds: profile.languages.map((l) => l.languageId),
     timezone: profile.connectionPreference?.timezone ?? "Asia/Jerusalem",
     connectionFormat: profile.connectionPreference?.format ?? "BOTH",
     connectionCadence: profile.connectionPreference?.cadence ?? "BOTH",

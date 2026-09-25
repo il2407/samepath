@@ -50,7 +50,7 @@ describe("Hero", () => {
     render(<Hero />);
 
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.textContent).toContain("הראיון הוא אישי");
+    expect(heading.textContent).toContain("במקום לדמיין איך ייראה ראיון העבודה הבא");
 
     const primaryCta = screen.getByRole("link", { name: "מצאו לי אנשים במסלול שלי" });
     expect(primaryCta.getAttribute("href")).toBe("/register");

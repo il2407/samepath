@@ -69,18 +69,6 @@ model SeniorityBand {
   @@map("seniority_bands")
 }
 
-model Language {
-  id      String @id @default(cuid())
-  code    String @unique
-  labelHe String
-  labelEn String
-
-  profileLanguages ProfileLanguage[]
-  connectionPrefs  ConnectionPreference[]
-  groups           Group[]
-
-  @@map("languages")
-}
 
 model Region {
   id      String @id @default(cuid())
@@ -126,6 +114,7 @@ model Tag {
 // =============================================================================
 
 enum UserStatus {
+  PENDING_APPROVAL
   ACTIVE
   PAUSED
   SUSPENDED
@@ -199,6 +188,7 @@ model User {
   payments            Payment[]
   accessPasses        AccessPass[]
   notificationLogs    NotificationLog[]
+  notifications       Notification[]
 
   @@map("users")
 }
@@ -270,14 +260,17 @@ model Session {
 }
 
 enum VerificationPurpose {
-  REGISTER // confirm-your-email link sent right after password registration
+  REGISTER // 6-digit code, manually typed, sent right after password registration
   LOGIN // unused since passwordless login was removed; kept to avoid a Postgres enum-value-removal migration
   EMAIL_CHANGE
   PASSWORD_RESET
 }
 
-/// Link-only, single-use tokens (no code — nothing in the UI types a code
-/// in anymore). Covers post-signup email confirmation and password reset.
+/// Single-use verification rows shared by two distinct mechanisms on one
+/// `tokenHash` column: PASSWORD_RESET stores hash(token) for a high-entropy
+/// link; REGISTER stores hash(`${id}:${code}`) for a low-entropy 6-digit code
+/// (the id is round-tripped via a pending-verification cookie so the code
+/// alone is never a sufficient guess target). `attempts` caps REGISTER guesses.
 model EmailVerification {
   id         String              @id @default(cuid())
   userId     String
@@ -377,7 +370,6 @@ model ProfessionalProfile {
 
   targetRoles          ProfileTargetRole[]
   tags                 ProfileTag[]
-  languages            ProfileLanguage[]
   employmentPositions  EmploymentPosition[]
   availabilitySlots    AvailabilitySlot[]
   connectionPreference ConnectionPreference?
@@ -414,16 +406,6 @@ model ProfileTag {
   @@map("profile_tags")
 }
 
-model ProfileLanguage {
-  id         String              @id @default(cuid())
-  profileId  String
-  profile    ProfessionalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  languageId String
-  language   Language            @relation(fields: [languageId], references: [id])
-
-  @@unique([profileId, languageId])
-  @@map("profile_languages")
-}
 
 enum EmploymentSource {
   RESUME
@@ -509,9 +491,7 @@ model ConnectionPreference {
   mode             ConnectionModePreference   @default(BOTH)
   genderPreference GenderPreference           @default(BOTH)
 
-  languageId String?
-  language   Language? @relation(fields: [languageId], references: [id])
-  timezone   String    @default("Asia/Jerusalem")
+  timezone String @default("Asia/Jerusalem")
 
   reasons ConnectionReason[]
 
@@ -855,7 +835,7 @@ model MatchScoreBreakdown {
   experienceScore   Float
   availabilityScore Float
   skillsScore       Float
-  languageScore     Float
+  styleScore        Float
   totalScore        Float
   weightsVersion    String
   computedAt        DateTime @default(now())
@@ -906,6 +886,12 @@ model Connection {
   /// The suggested session structure the pair picked for their first meeting
   /// (spec: a suggested, never-mandatory walkthrough so both sides know
   /// what to expect going in). Nullable — most connections never pick one.
+  /// A proposal never overwrites the last mutually accepted content.
+  pendingContentKey String?
+  contentProposedBy String?
+  agreedContentKey String?
+  contentRevision Int @default(0)
+
   selectedGuideId String?
   selectedGuide   SessionGuide? @relation(fields: [selectedGuideId], references: [id])
 
@@ -1134,10 +1120,9 @@ model Group {
   minSeniorityBand    SeniorityBand?     @relation("GroupMinSeniority", fields: [minSeniorityBandId], references: [id])
   maxSeniorityBandId  String?
   maxSeniorityBand    SeniorityBand?     @relation("GroupMaxSeniority", fields: [maxSeniorityBandId], references: [id])
-  languageId          String?
-  language            Language?          @relation(fields: [languageId], references: [id])
   timezone            String             @default("Asia/Jerusalem")
   mode                GroupMode          @default(ONLINE)
+  location            String?
   schedule            String?
   capacityMin         Int                @default(4)
   capacityMax         Int                @default(6)
@@ -1736,6 +1721,22 @@ model NotificationLog {
 
   @@index([userId, type])
   @@map("notification_logs")
+}
+
+/// In-app notification inbox (bell + list), distinct from NotificationLog
+/// above which is only an email-send audit trail. readAt null means unread.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 // =============================================================================

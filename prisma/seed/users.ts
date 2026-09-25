@@ -11,7 +11,7 @@ export const SEED_DEV_PASSWORD = "samepath-dev-password";
  * as a hard block and, deliberately, as an opt-out), a user blocking a
  * former employer, and a realistic spread of match strength (strong,
  * moderate, weak, and explicitly divergent) across professional field,
- * target role, seniority, tags, language, and availability. Never real
+ * target role, seniority, tags, and availability. Never real
  * personal data.
  *
  * Writes directly via Prisma rather than through the onboarding service
@@ -24,7 +24,7 @@ export const SEED_DEV_PASSWORD = "samepath-dev-password";
  *
  * `src/modules/matching/scoring.ts`'s DEFAULT_SCORING_WEIGHTS: targetRole
  * 0.30, professionalField 0.20, experience 0.15, availability 0.15,
- * skills 0.10, language/timezone/style 0.10 — targetRole and
+ * skills 0.10, timezone/style 0.10 — targetRole and
  * professionalField dominate, with experience and availability tied for
  * third. Every persona below varies deliberately across these dimensions
  * (not just cosmetically) rather than sharing one hardcoded field/role/
@@ -64,7 +64,7 @@ export const SEED_DEV_PASSWORD = "samepath-dev-password";
  *   corporate group as dana/yossi/noa, but BOTH boaz and tamar explicitly
  *   set blockEntireCorporateGroup: false — since the rule is an OR over
  *   both sides, this is the one Northwind-group pair that is NOT blocked.
- *   Same devops-engineer role/tags/language/availability on both sides,
+ *   Same devops-engineer role/tags/availability on both sides,
  *   so once the privacy gate lets them through, they also score as a
  *   strong match (~99%, verified below) — proof the flag is a real,
  *   independent per-user opt-in, not a structural given.
@@ -77,7 +77,7 @@ export const SEED_DEV_PASSWORD = "samepath-dev-password";
  *   same backend-developer role, same Thursday 16:00-18:00 availability
  *   slot) even after this change, deliberately, so the scenario still
  *   works exactly as before — verified with the pure scoring function at
- *   ~80.5% (role 1.0, field 1.0, availability 1.0, language 1.0, skills 0
+ *   ~80.5% (role 1.0, field 1.0, availability 1.0, skills 0
  *   since eitan's tags no longer overlap avi's, experience 0.23 since
  *   avi is senior and eitan is staff/principal).
  *
@@ -88,22 +88,22 @@ export const SEED_DEV_PASSWORD = "samepath-dev-password";
  *   demonstrated by only one pair anymore.
  *
  * SCORE-SPECTRUM EXAMPLES (all privacy-allowed; percentages below were
- * computed by feeding this file's actual field/role/tag/language/
+ * computed by feeding this file's actual field/role/tag/
  * availability choices into the real, unmodified `computeScoreBreakdown`
  * in a standalone, DB-free script — not hand-estimated):
  * - STRONG (~99%): guy (Soundwave, data-engineer) vs hila (Acme,
- *   data-engineer) — identical role, tags, languages, and availability
+ *   data-engineer) — identical role, tags, and availability
  *   slot, adjacent seniority, different unrelated companies, no block.
  * - STRONG (~99%): boaz vs tamar — see the opt-out demonstration above.
- * - MODERATE (~45%): dana vs guy — same field and language, but
+ * - MODERATE (~45%): dana vs guy — same field, but
  *   different role, mostly-disjoint tags, non-overlapping availability.
- * - WEAK (~30%): eitan vs guy (or hila) — same field and language only;
+ * - WEAK (~30%): eitan vs guy (or hila) — same field only;
  *   disjoint role, tags, and availability, and a huge seniority gap
  *   (staff/principal vs mid) zeroes out the experience term entirely.
  * - DIVERGENT NON-MATCH, not privacy-blocked (~6-16%): avi vs nadav, and
  *   michal vs nadav — nadav is in a different professional field
  *   (product, not software-engineering) with no target role at all, a
- *   different language (Arabic vs Hebrew/English), a huge seniority gap,
+ *   a huge seniority gap,
  *   and an atypical (Saturday) availability slot. Nothing here is a
  *   privacy rule; the two people are just realistically incompatible.
  * - EXPLICIT NON-MATCH, privacy-blocked: every pair in the first list
@@ -144,9 +144,6 @@ export async function seedUsers(prisma: PrismaClient) {
 
   const bands = await prisma.seniorityBand.findMany();
 
-  const hebrew = await prisma.language.findUniqueOrThrow({ where: { code: "he" } });
-  const english = await prisma.language.findUniqueOrThrow({ where: { code: "en" } });
-  const arabic = await prisma.language.findUniqueOrThrow({ where: { code: "ar" } });
 
   const centerRegion = await prisma.region.findUniqueOrThrow({ where: { code: "il-center" } });
   const telAvivRegion = await prisma.region.findUniqueOrThrow({ where: { code: "il-tel-aviv" } });
@@ -212,7 +209,6 @@ export async function seedUsers(prisma: PrismaClient) {
     regionId?: string;
     targetRoleIds?: string[];
     tagIds?: string[];
-    languageIds?: string[];
     availability?: { dayOfWeek: number; startMinute: number; endMinute: number }[];
     shareCompanyPreMatch?: boolean;
     gender?: "MALE" | "FEMALE";
@@ -226,7 +222,6 @@ export async function seedUsers(prisma: PrismaClient) {
     const currentRoleTitle = input.currentRoleTitle ?? "מפתח/ת Backend";
     const targetRoleIds = input.targetRoleIds ?? [backendRole.id];
     const tagIds = input.tagIds ?? [typescript.id, postgres.id, fintech.id];
-    const languageIds = input.languageIds ?? [hebrew.id];
     const availability = input.availability ?? [{ dayOfWeek: 2, startMinute: 600, endMinute: 720 }];
 
     const user = await prisma.user.upsert({
@@ -258,7 +253,6 @@ export async function seedUsers(prisma: PrismaClient) {
         gender: input.gender,
         targetRoles: { create: targetRoleIds.map((targetRoleId) => ({ targetRoleId })) },
         tags: { create: tagIds.map((tagId) => ({ tagId })) },
-        languages: { create: languageIds.map((languageId) => ({ languageId })) },
         privacyPreference: { create: { blockEntireCorporateGroup: input.blockEntireCorporateGroup ?? true } },
         connectionPreference: {
           create: {
@@ -372,7 +366,6 @@ export async function seedUsers(prisma: PrismaClient) {
     startedMonthsAgo: 10, // junior
     targetRoleIds: [backendRole.id, fullstackRole.id],
     tagIds: [typescript.id, docker.id, fintech.id],
-    languageIds: [hebrew.id, english.id],
     regionId: telAvivRegion.id,
     availability: [{ dayOfWeek: 1, startMinute: 1080, endMinute: 1200 }], // Monday 18:00-20:00
   });
@@ -440,7 +433,7 @@ export async function seedUsers(prisma: PrismaClient) {
   // The one Northwind-group pair that DOES match despite sharing a
   // corporate group with dana/yossi/noa: both explicitly opt out of the
   // group-wide block (blockEntireCorporateGroup: false). Same role, tags,
-  // language, and availability slot on both sides, so once the privacy
+  // and availability slot on both sides, so once the privacy
   // gate lets them through, they also score as a strong match (~99%) —
   // see the PERSONA MAP comment above. Still correctly blocked from
   // dana/yossi/noa themselves, since those three keep the *default* true,
@@ -473,7 +466,7 @@ export async function seedUsers(prisma: PrismaClient) {
     availability: [{ dayOfWeek: 1, startMinute: 540, endMinute: 660 }], // Monday 09:00-11:00, overlaps boaz
   });
 
-  // Strong-match anchor pair: identical role/tags/language/availability,
+  // Strong-match anchor pair: identical role/tags/availability,
   // adjacent seniority, unrelated companies (one of them Soundwave Labs,
   // previously unused by any seeded persona) — nothing blocks them, and
   // the score comes out to ~99% (verified with the real scoring function).
@@ -487,7 +480,6 @@ export async function seedUsers(prisma: PrismaClient) {
     currentRoleTitle: "מהנדס/ת דאטה",
     targetRoleIds: [dataEngineerRole.id],
     tagIds: [python.id, postgres.id, kafka.id, ecommerce.id],
-    languageIds: [hebrew.id, english.id],
     regionId: telAvivRegion.id,
     shareCompanyPreMatch: true,
     availability: [{ dayOfWeek: 3, startMinute: 1080, endMinute: 1200 }], // Wednesday 18:00-20:00
@@ -502,7 +494,6 @@ export async function seedUsers(prisma: PrismaClient) {
     currentRoleTitle: "מהנדס/ת דאטה",
     targetRoleIds: [dataEngineerRole.id],
     tagIds: [python.id, postgres.id, kafka.id, ecommerce.id],
-    languageIds: [hebrew.id, english.id],
     regionId: telAvivRegion.id,
     // A second, independent example of blocking a former employer (avi's
     // is the first) — unrelated to anyone else's block.
@@ -523,14 +514,13 @@ export async function seedUsers(prisma: PrismaClient) {
     currentRoleTitle: "מפתח/ת Frontend",
     targetRoleIds: [frontendRole.id],
     tagIds: [typescript.id, nodeJs.id, graphql.id, enterpriseSaas.id],
-    languageIds: [english.id],
     regionId: haifaNorthRegion.id,
     availability: [{ dayOfWeek: 2, startMinute: 720, endMinute: 840 }], // Tuesday 12:00-14:00
   });
 
   // Explicit, non-privacy-blocked non-match: a different professional
   // field entirely (product, not software-engineering), no target role at
-  // all, a disjoint language (Arabic), a much shallower seniority, and an
+  // all, a much shallower seniority, and an
   // atypical (Saturday) availability slot. Not blocked from anyone — the
   // very low score against, e.g., avi or michal (~6-16%, verified) comes
   // purely from real incompatibility, not a privacy rule.
@@ -545,7 +535,6 @@ export async function seedUsers(prisma: PrismaClient) {
     professionalFieldId: productField.id,
     targetRoleIds: [],
     tagIds: [governmentPublicSector.id],
-    languageIds: [arabic.id],
     regionId: southRegion.id,
     availability: [{ dayOfWeek: 6, startMinute: 600, endMinute: 720 }], // Saturday 10:00-12:00
   });
@@ -614,7 +603,7 @@ export async function seedUsers(prisma: PrismaClient) {
         experienceScore: 0.6,
         availabilityScore: 0.7,
         skillsScore: 0.8,
-        languageScore: 1,
+        styleScore: 1,
         totalScore: 0.83,
         weightsVersion: "default-v1",
       },
@@ -637,7 +626,6 @@ export async function seedUsers(prisma: PrismaClient) {
       title: "קבוצת תמיכה למפתחי Backend",
       professionalFieldId: field.id,
       targetRoleId: backendRole.id,
-      languageId: hebrew.id,
       timezone: "Asia/Jerusalem",
       mode: "ONLINE",
       schedule: "כל יום שלישי, 18:00",
@@ -666,7 +654,6 @@ export async function seedUsers(prisma: PrismaClient) {
       title: "קבוצת דיון: מעבר לתפקיד ניהולי",
       professionalFieldId: field.id,
       targetRoleId: backendRole.id,
-      languageId: hebrew.id,
       timezone: "Asia/Jerusalem",
       mode: "ONLINE",
       schedule: "כל שני שני, 20:00",

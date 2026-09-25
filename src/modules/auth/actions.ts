@@ -4,13 +4,21 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isValidEmail, isValidPassword, normalizeEmail } from "@/modules/auth/validation";
 import {
+  confirmEmailCode,
   getPostAuthRedirectPath,
   loginWithPassword,
   registerWithPassword,
   requestPasswordReset,
+  resendEmailConfirmation,
   resetPassword,
 } from "@/modules/auth/service";
-import { createSession, destroyCurrentSession } from "@/modules/auth/session";
+import {
+  clearPendingVerificationCookie,
+  createSession,
+  destroyCurrentSession,
+  getPendingVerificationId,
+  setPendingVerificationCookie,
+} from "@/modules/auth/session";
 
 async function clientIp(): Promise<string | null> {
   const h = await headers();
@@ -25,10 +33,46 @@ export async function registerWithPasswordAction(input: { email: string; passwor
   if (!isValidPassword(input.password)) return { ok: false, error: "הסיסמה חייבת להכיל לפחות 8 תווים" };
 
   const result = await registerWithPassword(email, input.password);
-  if (!result.ok) return { ok: false, error: "כתובת האימייל הזו כבר רשומה. נסו להתחבר במקום" };
+  if (!result.ok) {
+    return {
+      ok: false,
+      error:
+        result.reason === "account_blocked"
+          ? "לא ניתן להירשם עם כתובת האימייל הזו"
+          : "כתובת האימייל הזו כבר רשומה. נסו להתחבר במקום",
+    };
+  }
 
+  await setPendingVerificationCookie(result.verificationId);
+  redirect("/verify-email");
+}
+
+export async function verifyEmailCodeAction(code: string): Promise<ActionState> {
+  const verificationId = await getPendingVerificationId();
+  if (!verificationId) return { ok: false, error: "תוקף האימות פג. נסו להירשם מחדש" };
+
+  const result = await confirmEmailCode(verificationId, code);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.reason === "too_many_attempts" ? "יותר מדי ניסיונות שגויים. בקשו קוד חדש" : "הקוד שגוי. נסו שוב",
+    };
+  }
+
+  await clearPendingVerificationCookie();
   await createSession(result.userId);
   redirect(await getPostAuthRedirectPath(result.userId));
+}
+
+export async function resendVerificationCodeAction(): Promise<ActionState> {
+  const verificationId = await getPendingVerificationId();
+  if (!verificationId) return { ok: false, error: "תוקף האימות פג. נסו להירשם מחדש" };
+
+  const result = await resendEmailConfirmation(verificationId);
+  if (!result) return { ok: false, error: "לא ניתן לשלוח קוד חדש כרגע. נסו שוב בעוד כמה דקות" };
+
+  await setPendingVerificationCookie(result.verificationId);
+  return { ok: true };
 }
 
 export async function loginWithPasswordAction(input: { email: string; password: string }): Promise<ActionState> {
@@ -41,7 +85,12 @@ export async function loginWithPasswordAction(input: { email: string; password: 
   if (!result.ok) {
     return {
       ok: false,
-      error: result.reason === "rate_limited" ? "יותר מדי ניסיונות. נסו שוב בעוד כמה דקות" : "אימייל או סיסמה שגויים",
+      error:
+        result.reason === "rate_limited"
+          ? "יותר מדי ניסיונות. נסו שוב בעוד כמה דקות"
+          : result.reason === "account_blocked"
+            ? "החשבון הזה נחסם ואין אליו גישה"
+            : "אימייל או סיסמה שגויים",
     };
   }
 

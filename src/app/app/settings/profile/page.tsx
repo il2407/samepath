@@ -28,6 +28,8 @@ export default async function ProfileSettingsPage() {
 
   const currentPosition = profile.employmentPositions.find((p) => p.isCurrent) ?? null;
   const previousPositions = profile.employmentPositions.filter((p) => !p.isCurrent);
+  const skillOptions = options.skills.map((s) => ({ id: s.id, labelHe: s.labelHe }));
+  const domainOptions = options.domains.map((d) => ({ id: d.id, labelHe: d.labelHe }));
 
   return (
     <Container className="max-w-2xl py-10">
@@ -47,6 +49,8 @@ export default async function ProfileSettingsPage() {
             uploadId={resumeStatus.uploadId}
             originalFilename={resumeStatus.originalFilename}
             extracted={resumeStatus.draft.extracted}
+            skills={skillOptions}
+            domains={domainOptions}
           />
         ) : (
           <ResumeUploadCard extractionFailed={resumeStatus?.extractionFailed ?? false} />
@@ -64,9 +68,9 @@ export default async function ProfileSettingsPage() {
             professionalFieldId: r.professionalFieldId,
           }))}
           regions={options.regions.map((r) => ({ id: r.id, labelHe: r.labelHe }))}
-          skills={options.skills.map((s) => ({ id: s.id, labelHe: s.labelHe }))}
-          domains={options.domains.map((d) => ({ id: d.id, labelHe: d.labelHe }))}
-          languages={options.languages.map((l) => ({ id: l.id, labelHe: l.labelHe }))}
+          skills={skillOptions}
+          domains={domainOptions}
+          aiSummaryGuess={resumeStatus?.draft?.extracted.aiSummaryGuess ?? null}
           initial={{
             professionalFieldId: profile.professionalFieldId ?? "",
             targetRoleIds: profile.targetRoles.map((r) => r.targetRoleId),
@@ -74,7 +78,6 @@ export default async function ProfileSettingsPage() {
             regionId: profile.regionId,
             shortIntro: profile.shortIntro ?? "",
             tagIds: profile.tags.map((t) => t.tagId),
-            languageIds: profile.languages.map((l) => l.languageId),
             gender: profile.gender,
             currentCompany: currentPosition?.company
               ? { id: currentPosition.company.id, canonicalName: currentPosition.company.canonicalName }
@@ -87,6 +90,7 @@ export default async function ProfileSettingsPage() {
               startMonth: toMonthString(p.startDate),
               endMonth: p.endDate ? toMonthString(p.endDate) : "",
             })),
+            linkedInUrl: profile.disclosurePreference?.linkedInUrl ?? "",
           }}
         />
       </div>

@@ -14,7 +14,6 @@ export async function exportAccountData(userId: string) {
         include: {
           targetRoles: { include: { targetRole: { select: { labelHe: true } } } },
           tags: { include: { tag: { select: { labelHe: true, kind: true } } } },
-          languages: { include: { language: { select: { labelHe: true } } } },
           employmentPositions: true,
           availabilitySlots: true,
           connectionPreference: true,

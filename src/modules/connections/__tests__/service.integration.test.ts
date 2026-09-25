@@ -234,27 +234,55 @@ describe("setMyIntroRequirement", () => {
 });
 
 describe("getConnectionDetail / listConnectionsForUser — progressive disclosure at the CONNECTED stage (backlog item 9)", () => {
-  it("automatically reveals full name, employer, location, email, and phone once a real Connection exists", async () => {
+  it("automatically reveals full name and employer once a real Connection exists", async () => {
     const { a, connection } = await createTestConnection({
       bOptions: {
         companyId: (await prisma.company.create({ data: { canonicalName: "Acme" } })).id,
         companyConfirmed: true,
-        disclosure: { fullName: "מיכל כהן", phoneNumber: "050-0000000" },
+        disclosure: { fullName: "מיכל כהן" },
       },
     });
 
     const detail = await getConnectionDetail(a.user.id, connection.id);
     expect(detail?.otherParty.fullName).toBe("מיכל כהן");
     expect(detail?.otherParty.company).toBe("Acme");
-    expect(detail?.otherParty.email).toMatch(/@example\.com$/);
-    expect(detail?.otherParty.phoneNumber).toBe("050-0000000");
     expect(detail?.otherPartyDisplayName).toBe("מיכל כהן");
   });
 
-  it("never exposes a linkedInUrl key on otherParty — structurally removed, not merely hidden", async () => {
+  it("keeps email and phone hidden even once connected, unless the other party opted into shareEmailPostMatch / sharePhonePostMatch (contact-info reveal is a later, separate opt-in — backlog item 9 revised)", async () => {
+    const { a, connection } = await createTestConnection({
+      bOptions: { disclosure: { phoneNumber: "050-0000000" } },
+    });
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty.email).toBeNull();
+    expect(detail?.otherParty.phoneNumber).toBeNull();
+  });
+
+  it("reveals email and phone once the other party opts into shareEmailPostMatch / sharePhonePostMatch", async () => {
+    const { a, connection } = await createTestConnection({
+      bOptions: {
+        disclosure: { phoneNumber: "050-0000000", shareEmailPostMatch: true, sharePhonePostMatch: true },
+      },
+    });
+
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty.email).toMatch(/@example\.com$/);
+    expect(detail?.otherParty.phoneNumber).toBe("050-0000000");
+  });
+
+  it("exposes linkedInUrl automatically once connected — null (not fabricated) when the other party never set one", async () => {
     const { a, connection } = await createTestConnection();
     const detail = await getConnectionDetail(a.user.id, connection.id);
-    expect(detail?.otherParty as unknown as Record<string, unknown>).not.toHaveProperty("linkedInUrl");
+    expect(detail?.otherParty.linkedInUrl).toBeNull();
+  });
+
+  it("exposes the real linkedInUrl automatically once connected, with no opt-in required", async () => {
+    const { a, connection } = await createTestConnection({
+      bOptions: { disclosure: { linkedInUrl: "https://linkedin.com/in/example" } },
+    });
+    const detail = await getConnectionDetail(a.user.id, connection.id);
+    expect(detail?.otherParty.linkedInUrl).toBe("https://linkedin.com/in/example");
   });
 
   it("falls back to the anonymous nickname when the other party never set a fullName (old account)", async () => {
@@ -278,20 +306,31 @@ describe("getConnectionDetail / listConnectionsForUser — progressive disclosur
     expect(await getConnectionDetail(a.user.id, connection.id)).toBeNull();
   });
 
-  it("listConnectionsForUser also falls back to the nickname when fullName is unset", async () => {
+  it("listConnectionsForUser also falls back to the nickname when fullName is unset, and leaves the real fields null", async () => {
     const { a, connection } = await createTestConnection();
     const items = await listConnectionsForUser(a.user.id);
     const item = items.find((i) => i.id === connection.id);
     expect(item?.otherPartyDisplayName).toBe(generateFriendlyNickname(connection.matchSuggestionId));
+    expect(item?.otherPartyFullName).toBeNull();
+    expect(item?.otherPartyCompany).toBeNull();
+    expect(item?.otherPartyLinkedInUrl).toBeNull();
   });
 
-  it("listConnectionsForUser shows the real full name once the other party has one on file", async () => {
+  it("listConnectionsForUser shows the real full name, company, and LinkedIn URl once the other party has them on file", async () => {
+    const company = await prisma.company.create({ data: { canonicalName: "Acme" } });
     const { a, connection } = await createTestConnection({
-      bOptions: { disclosure: { fullName: "יוסי לוי" } },
+      bOptions: {
+        companyId: company.id,
+        companyConfirmed: true,
+        disclosure: { fullName: "יוסי לוי", linkedInUrl: "https://linkedin.com/in/yossi" },
+      },
     });
     const items = await listConnectionsForUser(a.user.id);
     const item = items.find((i) => i.id === connection.id);
     expect(item?.otherPartyDisplayName).toBe("יוסי לוי");
+    expect(item?.otherPartyFullName).toBe("יוסי לוי");
+    expect(item?.otherPartyCompany).toBe("Acme");
+    expect(item?.otherPartyLinkedInUrl).toBe("https://linkedin.com/in/yossi");
   });
 });
 

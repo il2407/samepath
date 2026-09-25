@@ -6,11 +6,17 @@ import { extractText, looksLikeEmptyTextLayer, PDF_MIME_TYPE, DOCX_MIME_TYPE } f
 import { getResumeParser } from "@/modules/resumes/parser";
 import { toMonthString, type StoredExtractedResumeData } from "@/modules/resumes/dto";
 import { resolveOrCreateCompanyByRawName } from "@/modules/companies/service";
+import { env } from "@/shared/env";
 import type { Prisma, ResumeUploadStatus } from "@/generated/prisma/client";
 
 const ALLOWED_MIME_TYPES = new Set([PDF_MIME_TYPE, DOCX_MIME_TYPE]);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
-const PARSER_VERSION = "deterministic-v1";
+// Recorded on every extraction draft so a stored draft always shows which
+// parser actually produced it (ParserSource.AI/DETERMINISTIC), even across a
+// deployment later flipping RESUME_PARSER — matches getResumeParser()'s own
+// env.RESUME_PARSER switch in parser.ts.
+const PARSER_VERSION = env.RESUME_PARSER === "deterministic" ? "deterministic-v1" : "ai-claude-sonnet-5-v1";
+const PARSER_SOURCE = env.RESUME_PARSER === "deterministic" ? "DETERMINISTIC" : "AI";
 
 export interface UploadedFile {
   filename: string;
@@ -88,14 +94,13 @@ async function runExtractionJob(resumeUploadId: string, userId: string, buffer: 
       throw new Error("EMPTY_TEXT_LAYER: no extractable text found (likely a scanned/image-only file)");
     }
 
-    const [tags, languages, targetRoles, regions] = await Promise.all([
+    const [tags, targetRoles, regions] = await Promise.all([
       prisma.tag.findMany({ where: { isActive: true, kind: { in: ["SKILL", "DOMAIN"] } }, select: { id: true, labelHe: true, labelEn: true } }),
-      prisma.language.findMany({ select: { id: true, labelHe: true, labelEn: true } }),
       prisma.targetRole.findMany({ where: { isActive: true }, select: { id: true, labelHe: true, labelEn: true, professionalFieldId: true } }),
       prisma.region.findMany({ select: { id: true, labelHe: true, labelEn: true } }),
     ]);
 
-    const parsed = await getResumeParser().parse(text, { knownTags: tags, knownLanguages: languages, knownTargetRoles: targetRoles, knownRegions: regions });
+    const parsed = await getResumeParser().parse(text, { knownTags: tags, knownTargetRoles: targetRoles, knownRegions: regions });
 
     const positions = await Promise.all(
       parsed.positions.map(async (p) => {
@@ -125,11 +130,14 @@ async function runExtractionJob(resumeUploadId: string, userId: string, buffer: 
       positions,
       currentRoleTitleGuess: parsed.currentRoleTitleGuess,
       matchedTagIds: parsed.matchedTagIds,
-      matchedLanguageIds: parsed.matchedLanguageIds,
       matchedTargetRoleIds: parsed.matchedTargetRoleIds,
       professionalFieldIdGuess,
       matchedRegionId: parsed.matchedRegionId,
       shortIntroGuess: parsed.shortIntroGuess,
+      aiSummaryGuess: parsed.aiSummaryGuess,
+      fullNameGuess: parsed.fullNameGuess,
+      phoneGuess: parsed.phoneGuess,
+      linkedInUrlGuess: parsed.linkedInUrlGuess,
     };
 
     await prisma.$transaction([
@@ -140,7 +148,7 @@ async function runExtractionJob(resumeUploadId: string, userId: string, buffer: 
           userId,
           extractedJson: draftData as unknown as Prisma.InputJsonValue,
           parserVersion: PARSER_VERSION,
-          parserSource: "DETERMINISTIC",
+          parserSource: PARSER_SOURCE,
         },
       }),
     ]);
@@ -194,6 +202,23 @@ export async function getResumeStatusForUser(userId: string): Promise<ResumeStat
   };
 }
 
+/**
+ * The user's most recent resume extraction draft, regardless of whether it
+ * has since been confirmed or its upload deleted — unlike
+ * getResumeStatusForUser, which stops surfacing a draft once it's confirmed.
+ * Used to pre-fill later onboarding steps (e.g. the privacy step's name /
+ * phone / LinkedIn fields) with the resume's best-effort guesses, even
+ * though the resume step itself already ran and was confirmed earlier in
+ * onboarding.
+ */
+export async function getLatestResumeDraftData(userId: string): Promise<StoredExtractedResumeData | null> {
+  const draft = await prisma.resumeExtractionDraft.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+  return draft ? (draft.extractedJson as unknown as StoredExtractedResumeData) : null;
+}
+
 export type RetryExtractionResult = { ok: true } | { ok: false; error: string };
 
 /**
@@ -226,13 +251,15 @@ export async function retryResumeExtraction(userId: string, uploadId: string): P
 }
 
 /**
- * Finalizes onboarding from a resume draft: records the confirmation, and —
- * unless the user opted to keep it — deletes the original file. Applying
- * the (possibly user-edited) extracted fields to the profile itself is the
- * caller's job via the existing saveProfileStepOne, so this only owns the
- * resume-specific bookkeeping.
+ * Finalizes onboarding from a resume draft: records the confirmation. The
+ * original file is always kept (no user-facing save/discard choice —
+ * deleting it after confirmation used to be an option, but the file is
+ * saved by default with no toggle now). Applying the (possibly user-edited)
+ * extracted fields to the profile itself is the caller's job via the
+ * existing saveProfileStepOne, so this only owns the resume-specific
+ * bookkeeping.
  */
-export async function confirmResumeDraft(userId: string, uploadId: string, keepFile: boolean): Promise<void> {
+export async function confirmResumeDraft(userId: string, uploadId: string): Promise<void> {
   const upload = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: uploadId } });
   if (upload.userId !== userId) throw new Error("not your upload");
 
@@ -248,20 +275,6 @@ export async function confirmResumeDraft(userId: string, uploadId: string, keepF
     // whether the file itself is kept afterward.
     prisma.professionalProfile.update({ where: { userId }, data: { cvVerifiedAt: new Date() } }),
   ]);
-
-  if (!keepFile && upload.status !== "DELETED") {
-    try {
-      await getStorage().delete(upload.storageKey);
-      await prisma.resumeUpload.update({ where: { id: uploadId }, data: { status: "DELETED", deletedAt: new Date() } });
-    } catch (error) {
-      // Best-effort cleanup only: a failure here must never fail onboarding
-      // (the profile is already saved by the time this runs). Logged, not
-      // swallowed — the upload status is deliberately left as-is (not
-      // marked DELETED) so it stays a truthful record that the file may
-      // still exist.
-      console.error("failed to delete resume file after confirmation", { uploadId, error });
-    }
-  }
 }
 
 /** Discards a pending upload/draft without confirming — e.g. the user chooses to start over with manual entry. */

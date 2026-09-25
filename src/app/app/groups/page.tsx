@@ -1,3 +1,4 @@
+import { EditorialPhoto } from "@/shared/ui/EditorialPhoto";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
@@ -5,6 +6,7 @@ import { getOnboardingStep } from "@/modules/profiles/service";
 import { listEligibleGroups } from "@/modules/groups/service";
 import { GroupCard } from "@/modules/groups/GroupCard";
 import { Container } from "@/shared/ui/Container";
+import { FlowNav } from "../FlowNav";
 
 export const metadata: Metadata = { title: "קבוצות — SamePath" };
 
@@ -16,6 +18,8 @@ export default async function GroupsPage() {
 
   return (
     <Container className="max-w-2xl py-10">
+      <EditorialPhoto scene="community" label="מקום סביב השולחן" caption="קבוצה קטנה. יותר נקודות מבט." />
+      <FlowNav />
       <h1 className="text-2xl font-bold text-ink">קבוצות</h1>
       <p className="mt-2 text-muted">קבוצות קטנות (כ-4–6 אנשים) שמתאימות לכם. חברי הקבוצה אינם מוצגים מראש.</p>
 

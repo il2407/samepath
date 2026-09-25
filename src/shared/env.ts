@@ -41,7 +41,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
 
-  RESUME_PARSER: z.enum(["deterministic", "ai"]).default("deterministic"),
+  RESUME_PARSER: z.enum(["deterministic", "ai"]).default("ai"),
   RESUME_AI_API_KEY: z.string().optional().default(""),
 
   RATE_LIMIT_ADAPTER: z.enum(["memory"]).default("memory"),

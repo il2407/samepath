@@ -43,7 +43,8 @@ Real, fixable gaps found and addressed in this pass:
   (summary) hardcoded blank on every resume upload regardless of what the
   file actually contained. Added, all following the same "exact known-label
   match, or a narrowly-scoped single-line heuristic — never a guess
-  presented as fact" discipline as the existing skill/language matching:
+  presented as fact" discipline as the existing skill matching (language
+  matching has since been removed along with the language factor itself):
   - **Target role / professional field**: matching a known `TargetRole`
     label (e.g. "Backend Developer") in the text now also selects that
     role's `professionalFieldId` — safe because a target role belongs to

@@ -5,6 +5,9 @@ import { requireUser } from "@/modules/auth/session";
 import { getOnboardingStep, getOnboardingOverviewData } from "@/modules/profiles/service";
 import { confirmOnboardingAction } from "@/modules/profiles/actions";
 import { Button } from "@/shared/ui/Button";
+import { Avatar } from "@/shared/ui/Avatar";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
+import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 import {
   connectionCadenceLabels,
   connectionFormatLabels,
@@ -63,6 +66,18 @@ export default async function OnboardingOverviewPage() {
     availabilityByDay.set(slot.dayOfWeek, list);
   }
 
+  // Preview only — the real nickname is regenerated per suggestion (see
+  // SuggestionView.codeName); profile.id is just a stable seed so this
+  // preview doesn't change on every page refresh.
+  const previewNickname = generateFriendlyNickname(profile.id);
+  const previewSummary = [
+    profile.disclosurePreference?.shareCompanyPreMatch
+      ? (currentPosition?.company?.canonicalName ?? currentPosition?.companyRaw ?? null)
+      : null,
+    profile.professionalField?.labelHe ?? null,
+    profile.seniorityBand?.labelHe ?? null,
+  ].filter(Boolean);
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-ink">סקירה לפני הפעלה</h1>
@@ -71,6 +86,56 @@ export default async function OnboardingOverviewPage() {
       </p>
 
       <div className="mt-8 space-y-6">
+        <section className="rounded-2xl border border-primary/30 bg-mint p-5">
+          <h2 className="font-semibold text-ink">איך תיראו לאחרים לפני אישור הדדי</h2>
+          <p className="mt-1 text-sm text-muted">
+            עד לאישור הדדי, זו ורק זו התמונה שמוצגת עליכם — לא שם מלא ולא תמונה אמיתית. הכינוי והאייקון
+            משתנים בכל הצעת התאמה חדשה; זו רק דוגמה.
+          </p>
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-white p-4">
+            <Avatar seed={profile.id} size="lg" />
+            <div>
+              <p className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+                {previewNickname}
+                {profile.cvVerifiedAt && <CvVerifiedBadge />}
+              </p>
+              <p className="text-sm text-muted">{previewSummary.join(" · ") || "—"}</p>
+            </div>
+          </div>
+          <dl className="mt-4 space-y-2 text-sm text-ink">
+            {profile.shortIntro && (
+              <div>
+                <dt className="text-muted">תיאור קצר</dt>
+                <dd>{profile.shortIntro}</dd>
+              </div>
+            )}
+            {profile.tags.length > 0 && (
+              <div>
+                <dt className="text-muted">תגיות</dt>
+                <dd>{profile.tags.map((t) => t.tag.labelHe).join(", ")}</dd>
+              </div>
+            )}
+            <div>
+              <dt className="text-muted">תפקידי יעד</dt>
+              <dd>{profile.targetRoles.map((r) => r.targetRole.labelHe).join(", ") || "—"}</dd>
+            </div>
+            {cp && (
+              <div>
+                <dt className="text-muted">אופן ותדירות חיבור</dt>
+                <dd>
+                  {[connectionFormatLabels[cp.format], connectionCadenceLabels[cp.cadence], connectionModeLabels[cp.mode]]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </dd>
+              </div>
+            )}
+          </dl>
+          <p className="mt-4 text-xs text-muted">
+            שם החברה מוצג כאן רק כי סימנתם &quot;להציג גם את שם המעסיק לפני אישור הדדי&quot; — גם כשמסומן, הוא
+            יוצג לצד השני רק אם גם הוא סימן את אותה הגדרה.
+          </p>
+        </section>
+
         <section className="rounded-2xl border border-border bg-white p-5">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-ink">פרופיל מקצועי</h2>
@@ -105,12 +170,6 @@ export default async function OnboardingOverviewPage() {
                 <dd>{profile.tags.map((t) => t.tag.labelHe).join(", ")}</dd>
               </div>
             )}
-            {profile.languages.length > 0 && (
-              <div>
-                <dt className="text-muted">שפות</dt>
-                <dd>{profile.languages.map((l) => l.language.labelHe).join(", ")}</dd>
-              </div>
-            )}
             {currentPosition && (
               <div>
                 <dt className="text-muted">מעסיק נוכחי</dt>
@@ -139,11 +198,16 @@ export default async function OnboardingOverviewPage() {
             <h2 className="font-semibold text-ink">פרטיות</h2>
             <EditLink href="/app/onboarding/privacy?edit=true" />
           </div>
+          <div className="mb-4 rounded-xl border border-border bg-paper p-4">
+            <p className="text-sm font-medium text-ink">
+              מעסיק נוכחי: {profile.currentCompany?.canonicalName ?? "לא הוזן"}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              משמש רק כדי למנוע התאמה בטעות עם עמיתים לעבודה — לעולם לא מוצג לאף אחד. אם התחלפתם מקום
+              עבודה, אפשר לעדכן לפני ההפעלה.
+            </p>
+          </div>
           <dl className="mt-4 space-y-2 text-sm text-ink">
-            <div>
-              <dt className="text-muted">מעסיק מאושר</dt>
-              <dd>{profile.currentCompany?.canonicalName ?? "—"}</dd>
-            </div>
             <div>
               <dt className="text-muted">חברות חסומות</dt>
               <dd>
@@ -205,10 +269,6 @@ export default async function OnboardingOverviewPage() {
               <dd>{cp ? genderPreferenceLabels[cp.genderPreference] : "—"}</dd>
             </div>
             <div>
-              <dt className="text-muted">שפת שיחה מועדפת</dt>
-              <dd>{cp?.language?.labelHe ?? "—"}</dd>
-            </div>
-            <div>
               <dt className="text-muted">למה חשוב לכם להתחבר</dt>
               <dd>{cp?.reasons.map((r) => connectionReasonLabels[r] ?? r).join(", ") || "—"}</dd>
             </div>
@@ -227,7 +287,17 @@ export default async function OnboardingOverviewPage() {
         </section>
       </div>
 
-      <form action={confirmOnboardingAction} className="mt-8">
+      <section className="mt-8 rounded-2xl border border-border bg-paper p-5">
+        <h2 className="font-semibold text-ink">מה קורה בלחיצה על הכפתור</h2>
+        <p className="mt-2 text-sm text-muted">
+          הפרופיל שלכם יוצג להצעות התאמה עם עמיתים ועמיתות שעונים על ההעדפות שלכם — בכינוי ואייקון
+          אנונימיים בלבד, כפי שמופיע למעלה. שום פרט מזהה (שם מלא, תמונה אמיתית, פרטי קשר) לא ייחשף
+          לצד השני עד שתאשרו זאת, או עד שתיווצר התאמה הדדית ולאחריה חיבור פעיל. אפשר לחזור ולערוך כל
+          שלב בכל עת גם אחרי ההפעלה, דרך הגדרות החשבון.
+        </p>
+      </section>
+
+      <form action={confirmOnboardingAction} className="mt-6">
         <Button type="submit" className="w-full sm:w-auto">
           אישור והפעלת הפרופיל
         </Button>

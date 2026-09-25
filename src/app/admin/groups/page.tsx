@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/modules/auth/session";
 import { prisma } from "@/shared/db";
 import { CreateGroupForm } from "@/modules/admin/CreateGroupForm";
-import { listProfessionalFields, listTargetRoles, listLanguages } from "@/modules/reference-data/service";
+import { listProfessionalFields, listTargetRoles } from "@/modules/reference-data/service";
 
 export const metadata: Metadata = { title: "קבוצות — SamePath Admin" };
 
@@ -16,14 +16,13 @@ const statusLabels: Record<string, string> = {
 
 export default async function AdminGroupsPage() {
   await requireAdmin();
-  const [groups, fields, targetRoles, languages, guides] = await Promise.all([
+  const [groups, fields, targetRoles, guides] = await Promise.all([
     prisma.group.findMany({
       include: { memberships: { where: { status: { in: ["APPROVED", "ACTIVE"] } } }, waitlist: true },
       orderBy: { createdAt: "desc" },
     }),
     listProfessionalFields(),
     listTargetRoles(),
-    listLanguages(),
     prisma.sessionGuide.findMany({ where: { status: "PUBLISHED" } }),
   ]);
 
@@ -35,7 +34,6 @@ export default async function AdminGroupsPage() {
         <CreateGroupForm
           fields={fields.map((f) => ({ id: f.id, labelHe: f.labelHe }))}
           targetRoles={targetRoles.map((r) => ({ id: r.id, labelHe: r.labelHe }))}
-          languages={languages.map((l) => ({ id: l.id, labelHe: l.labelHe }))}
           guides={guides.map((g) => ({ id: g.id, labelHe: g.title }))}
         />
       </div>

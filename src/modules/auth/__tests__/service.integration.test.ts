@@ -14,7 +14,7 @@ vi.mock("@/modules/notifications/mailer", () => ({
 const {
   registerWithPassword,
   loginWithPassword,
-  confirmEmail,
+  confirmEmailCode,
   requestPasswordReset,
   resetPassword,
   findOrCreateUserFromGoogle,
@@ -27,14 +27,24 @@ function extractToken(text: string): string {
   return match[1];
 }
 
+function extractCode(text: string): string {
+  const match = text.match(/קוד האימות שלכם: (\d{6})/);
+  if (!match) throw new Error(`no code found in email body:\n${text}`);
+  return match[1];
+}
+
 beforeEach(async () => {
   await resetTestDatabase();
   sent.length = 0;
 });
 
+function register(email: string, password: string) {
+  return registerWithPassword(email, password);
+}
+
 describe("registerWithPassword", () => {
   it("creates a user + EMAIL identity and sends a confirmation email, unverified until confirmed", async () => {
-    const result = await registerWithPassword("alice@example.com", "correct horse battery");
+    const result = await register("alice@example.com", "correct horse battery");
     if (!result.ok) throw new Error("expected ok");
     expect(sent).toHaveLength(1);
 
@@ -46,18 +56,37 @@ describe("registerWithPassword", () => {
     });
     expect(identity.passwordHash).not.toBeNull();
     expect(identity.passwordHash).not.toContain("correct horse battery");
+
+    // No ProfessionalProfile yet — registration only collects email + password;
+    // the user goes straight into onboarding's resume-upload-first step 1.
+    const profile = await prisma.professionalProfile.findUnique({ where: { userId: result.userId } });
+    expect(profile).toBeNull();
+  });
+
+  it("grants a 30-day free trial access pass alongside the new user, atomically", async () => {
+    const result = await register("quinn@example.com", "correct horse battery");
+    if (!result.ok) throw new Error("expected ok");
+
+    const passes = await prisma.accessPass.findMany({ where: { userId: result.userId } });
+    expect(passes).toHaveLength(1);
+    expect(passes[0]).toMatchObject({
+      status: "PENDING_ACTIVATION",
+      durationDays: 30,
+      paymentId: null,
+      productConfigId: null,
+    });
   });
 
   it("rejects registering an email that's already taken", async () => {
-    await registerWithPassword("bob@example.com", "correct horse battery");
-    const second = await registerWithPassword("bob@example.com", "a different password");
+    await register("bob@example.com", "correct horse battery");
+    const second = await register("bob@example.com", "a different password");
     expect(second).toEqual({ ok: false, reason: "email_taken" });
   });
 });
 
 describe("loginWithPassword", () => {
   it("logs in with the correct password", async () => {
-    const registered = await registerWithPassword("carol@example.com", "correct horse battery");
+    const registered = await register("carol@example.com", "correct horse battery");
     if (!registered.ok) throw new Error("expected ok");
 
     const result = await loginWithPassword("carol@example.com", "correct horse battery", "127.0.0.1");
@@ -65,7 +94,7 @@ describe("loginWithPassword", () => {
   });
 
   it("rejects the wrong password with a generic reason", async () => {
-    await registerWithPassword("dave@example.com", "correct horse battery");
+    await register("dave@example.com", "correct horse battery");
     const result = await loginWithPassword("dave@example.com", "wrong password", "127.0.0.1");
     expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
@@ -88,41 +117,56 @@ describe("loginWithPassword", () => {
     expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
 
-  it("rejects a suspended account", async () => {
-    const registered = await registerWithPassword("frank@example.com", "correct horse battery");
+  it("tells a blocked account it is blocked, once the password is correct", async () => {
+    const registered = await register("frank@example.com", "correct horse battery");
     if (!registered.ok) throw new Error("expected ok");
     await prisma.user.update({ where: { id: registered.userId }, data: { status: "SUSPENDED" } });
 
     const result = await loginWithPassword("frank@example.com", "correct horse battery", "127.0.0.1");
-    expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
+    expect(result).toEqual({ ok: false, reason: "account_blocked" });
   });
 });
 
-describe("confirmEmail", () => {
-  it("verifies via the emailed token and cannot be reused", async () => {
-    const registered = await registerWithPassword("grace@example.com", "correct horse battery");
+describe("confirmEmailCode", () => {
+  it("verifies via the emailed code and cannot be reused", async () => {
+    const registered = await register("grace@example.com", "correct horse battery");
     if (!registered.ok) throw new Error("expected ok");
-    const token = extractToken(sent[0].text);
+    const code = extractCode(sent[0].text);
 
-    const result = await confirmEmail(token);
-    expect(result).toEqual({ ok: true });
+    const result = await confirmEmailCode(registered.verificationId, code);
+    expect(result).toEqual({ ok: true, userId: registered.userId });
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: registered.userId } });
     expect(user.emailVerifiedAt).not.toBeNull();
 
-    const second = await confirmEmail(token);
+    const second = await confirmEmailCode(registered.verificationId, code);
     expect(second).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
-  it("rejects an unknown token", async () => {
-    const result = await confirmEmail("not-a-real-token");
+  it("rejects an unknown verification id", async () => {
+    const result = await confirmEmailCode("not-a-real-id", "123456");
     expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
+  });
+
+  it("rejects a wrong code and caps attempts", async () => {
+    const registered = await register("heidi@example.com", "correct horse battery");
+    if (!registered.ok) throw new Error("expected ok");
+    const code = extractCode(sent[0].text);
+    const wrongCode = code === "000000" ? "111111" : "000000";
+
+    for (let i = 0; i < 5; i++) {
+      const result = await confirmEmailCode(registered.verificationId, wrongCode);
+      expect(result).toEqual({ ok: false, reason: "wrong_code" });
+    }
+
+    const capped = await confirmEmailCode(registered.verificationId, code);
+    expect(capped).toEqual({ ok: false, reason: "too_many_attempts" });
   });
 });
 
 describe("requestPasswordReset + resetPassword", () => {
   it("resets the password via the emailed token and cannot reuse it", async () => {
-    const registered = await registerWithPassword("henry@example.com", "old password here");
+    const registered = await register("henry@example.com", "old password here");
     if (!registered.ok) throw new Error("expected ok");
     sent.length = 0;
 
@@ -184,6 +228,10 @@ describe("findOrCreateUserFromGoogle", () => {
       where: { provider_providerAccountId: { provider: "GOOGLE", providerAccountId: "google-sub-jack" } },
     });
     expect(identity.userId).toBe(result.userId);
+
+    const passes = await prisma.accessPass.findMany({ where: { userId: result.userId } });
+    expect(passes).toHaveLength(1);
+    expect(passes[0]).toMatchObject({ status: "PENDING_ACTIVATION", durationDays: 30 });
   });
 
   it("returns the same user on a repeat sign-in", async () => {
@@ -205,7 +253,7 @@ describe("findOrCreateUserFromGoogle", () => {
   });
 
   it("auto-links to an existing password account with a matching verified email", async () => {
-    const registered = await registerWithPassword("leo@example.com", "correct horse battery");
+    const registered = await register("leo@example.com", "correct horse battery");
     if (!registered.ok) throw new Error("expected ok");
 
     const google = await findOrCreateUserFromGoogle({
@@ -236,7 +284,7 @@ describe("findOrCreateUserFromGoogle", () => {
   });
 
   it("rejects a suspended account's Google sign-in", async () => {
-    const registered = await registerWithPassword("nina@example.com", "correct horse battery");
+    const registered = await register("nina@example.com", "correct horse battery");
     if (!registered.ok) throw new Error("expected ok");
     await prisma.user.update({ where: { id: registered.userId }, data: { status: "SUSPENDED" } });
 
@@ -251,8 +299,14 @@ describe("findOrCreateUserFromGoogle", () => {
 });
 
 describe("getPostAuthRedirectPath", () => {
-  it("sends users without a profile to onboarding", async () => {
+  it("sends users without a profile at all (e.g. a fresh sign-up) to the onboarding steps explanation first", async () => {
     const user = await prisma.user.create({ data: { email: "oscar@example.com" } });
+    expect(await getPostAuthRedirectPath(user.id)).toBe("/app/onboarding/welcome");
+  });
+
+  it("sends users with a draft profile to onboarding", async () => {
+    const user = await prisma.user.create({ data: { email: "nadia@example.com" } });
+    await prisma.professionalProfile.create({ data: { userId: user.id, status: "DRAFT" } });
     expect(await getPostAuthRedirectPath(user.id)).toBe("/app/onboarding/profile");
   });
 

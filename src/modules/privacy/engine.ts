@@ -25,7 +25,7 @@ export interface AvailabilitySlot {
 
 export interface EligibilityProfile {
   userId: string;
-  userStatus: "ACTIVE" | "PAUSED" | "SUSPENDED" | "DELETED";
+  userStatus: "PENDING_APPROVAL" | "ACTIVE" | "PAUSED" | "SUSPENDED" | "DELETED";
   profileStatus: "DRAFT" | "PENDING_PRIVACY" | "INCOMPLETE" | "ACTIVE" | "PAUSED";
   emailVerified: boolean;
   accessExpired: boolean;
@@ -103,6 +103,7 @@ function isIneligible(p: EligibilityProfile): boolean {
   return (
     p.userStatus === "DELETED" ||
     p.userStatus === "PAUSED" ||
+    p.userStatus === "PENDING_APPROVAL" ||
     p.profileStatus !== "ACTIVE" ||
     !p.emailVerified ||
     p.accessExpired

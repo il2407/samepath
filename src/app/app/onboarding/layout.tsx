@@ -1,42 +1,22 @@
+import { EditorialPhoto } from "@/shared/ui/EditorialPhoto";
 import { requireUser } from "@/modules/auth/session";
 import { getOnboardingStep } from "@/modules/profiles/service";
 import { Container } from "@/shared/ui/Container";
-import { cn } from "@/shared/ui/cn";
+import { OnboardingSteps } from "./OnboardingSteps";
 
-const steps = [
-  { key: "profile", label: "פרופיל מקצועי" },
-  { key: "privacy", label: "פרטיות" },
-  { key: "preferences", label: "העדפות חיבור" },
-  { key: "overview", label: "סקירה ואישור" },
-] as const;
+const stepKeys = ["profile", "privacy", "preferences", "overview"] as const;
 
 export default async function OnboardingLayout({ children }: LayoutProps<"/app/onboarding">) {
   const user = await requireUser();
   const currentStep = await getOnboardingStep(user.id);
-  const currentIndex = steps.findIndex((s) => s.key === currentStep);
+  // "done" means every step is complete — there's no matching entry in
+  // stepKeys, so fall back to marking all four as filled.
+  const completedIndex = currentStep === "done" ? stepKeys.length : stepKeys.indexOf(currentStep);
 
   return (
     <Container className="max-w-2xl py-10">
-      <ol className="mb-8 flex items-center gap-2 text-sm">
-        {steps.map((step, index) => (
-          <li key={step.key} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex size-7 items-center justify-center rounded-full text-xs font-semibold",
-                index < currentIndex || currentStep === "done"
-                  ? "bg-primary text-white"
-                  : index === currentIndex
-                    ? "bg-mint text-primary-dark ring-2 ring-primary"
-                    : "bg-warm-surface text-muted",
-              )}
-            >
-              {index + 1}
-            </span>
-            <span className={index === currentIndex ? "font-medium text-ink" : "text-muted"}>{step.label}</span>
-            {index < steps.length - 1 && <span className="mx-1 h-px w-6 bg-border" aria-hidden />}
-          </li>
-        ))}
-      </ol>
+      <EditorialPhoto compact scene="conversation" label="נעים להכיר" caption="בואו נתחיל." />
+      <OnboardingSteps completedIndex={completedIndex} />
       {children}
     </Container>
   );

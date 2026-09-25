@@ -23,7 +23,8 @@ export default async function AdminDashboardPage() {
   ];
 
   const alerts = [
-    { label: "תרומות ממתינות לבדיקה", value: m.pendingModerationCount, href: "/admin/contributions" },
+    { label: "משתמשים ממתינים לאישור", value: m.pendingUserApprovals, href: "/admin/users?filter=PENDING" },
+    { label: "שאלות ראיון ממתינות לאישור", value: m.pendingModerationCount, href: "/admin/contributions" },
     { label: "דיווחים פתוחים", value: m.openReportsCount, href: "/admin/reports" },
     { label: "בקשות הסרה פתוחות", value: m.openTakedownsCount, href: "/admin/takedowns" },
   ];
@@ -42,7 +43,7 @@ export default async function AdminDashboardPage() {
       </div>
 
       <h2 className="mt-8 text-sm font-semibold text-muted">דורש תשומת לב</h2>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {alerts.map((a) => (
           <Link
             key={a.label}

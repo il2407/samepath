@@ -3,6 +3,7 @@ import { requireUser } from "@/modules/auth/session";
 import { getCreditBalance, listLedger, loadRewardPolicy } from "@/modules/credits/service";
 import { CreditConversionPanel } from "@/modules/credits/CreditConversionPanel";
 import { Container } from "@/shared/ui/Container";
+import { FlowNav } from "../FlowNav";
 
 export const metadata: Metadata = { title: "קרדיטים — SamePath" };
 
@@ -25,6 +26,7 @@ export default async function CreditsPage() {
 
   return (
     <Container className="max-w-2xl py-10">
+      <FlowNav />
       <h1 className="text-2xl font-bold text-ink">קרדיטים</h1>
       <p className="mt-2 text-muted">
         קרדיטים אינם ניתנים למימוש כספי או להעברה. הם מוענקים רק לאחר אישור תרומה על ידי צוות המודרציה.
@@ -47,7 +49,7 @@ export default async function CreditsPage() {
             <p className="text-sm text-muted">אין עדיין פעילות.</p>
           ) : (
             ledger.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm">
+              <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-white px-4 py-3 text-sm">
                 <span className="text-ink">{reasonLabels[entry.reason] ?? entry.reason}</span>
                 <span className={entry.amount >= 0 ? "font-medium text-primary-dark" : "font-medium text-muted"}>
                   {entry.amount >= 0 ? "+" : ""}

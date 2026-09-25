@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/shared/db";
 import { computeExpiryDate, daysRemaining, needsExpiryReminder } from "@/modules/access-passes/timing";
 import { getMailer } from "@/modules/notifications/mailer";
-import type { ActivationEventType } from "@/generated/prisma/client";
+import type { ActivationEventType, Prisma } from "@/generated/prisma/client";
 
 const REMINDER_THRESHOLD_DAYS = 7;
 
@@ -82,6 +82,28 @@ export async function createPendingAccessPass(
     data: { userId, paymentId, productConfigId, status: "PENDING_ACTIVATION", durationDays },
   });
   await prisma.accessPassEvent.create({ data: { accessPassId: accessPass.id, type: "CREATED" } });
+  return accessPass;
+}
+
+/**
+ * The platform launches fully free: every new user gets this instead of
+ * buying one. No paymentId/productConfigId, so it flows through the exact
+ * same pending -> checkAndActivateAccessGate path as a paid pass — it starts
+ * its clock on the user's first meaningful event, not at signup. Accepts an
+ * optional transaction client so callers can grant it atomically alongside
+ * the User row itself (see modules/auth/service.ts).
+ */
+export async function grantFreeTrialAccessPass(
+  userId: string,
+  durationDays = 30,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
+  const accessPass = await client.accessPass.create({
+    data: { userId, status: "PENDING_ACTIVATION", durationDays },
+  });
+  await client.accessPassEvent.create({
+    data: { accessPassId: accessPass.id, type: "CREATED", metadata: { source: "free_trial_signup" } },
+  });
   return accessPass;
 }
 

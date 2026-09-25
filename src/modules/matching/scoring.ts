@@ -9,7 +9,7 @@ export interface ScoringWeights {
   experience: number;
   availability: number;
   skills: number;
-  languageTimezoneStyle: number;
+  timezoneStyle: number;
 }
 
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
@@ -18,20 +18,18 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   experience: 0.15,
   availability: 0.15,
   skills: 0.1,
-  languageTimezoneStyle: 0.1,
+  timezoneStyle: 0.1,
 };
 
-/** Sub-weights inside the combined "language/timezone/connection-style" bucket. */
+/** Sub-weights inside the combined "timezone/connection-style" bucket. */
 export interface StyleSubWeights {
-  language: number;
   timezone: number;
   style: number;
 }
 
 export const DEFAULT_STYLE_SUB_WEIGHTS: StyleSubWeights = {
-  language: 0.4,
-  timezone: 0.3,
-  style: 0.3,
+  timezone: 0.5,
+  style: 0.5,
 };
 
 /** Months beyond which experience proximity has fully decayed to 0. */
@@ -48,7 +46,6 @@ export interface ScoringProfile {
   professionalFieldId: string | null;
   experienceMonths: number;
   tagIds: string[];
-  languageIds: string[];
   timezone: string;
   connectionFormat: "ONE_ON_ONE" | "GROUP" | "BOTH";
   connectionCadence: "ONE_TIME" | "RECURRING" | "BOTH";
@@ -100,8 +97,7 @@ function threeWayCompatible<T extends string>(a: T | "BOTH", b: T | "BOTH"): boo
   return a === b;
 }
 
-function styleScore(subject: ScoringProfile, candidate: ScoringProfile, weights: StyleSubWeights): number {
-  const languageScore = jaccard(subject.languageIds, candidate.languageIds) > 0 ? 1 : 0;
+function timezoneStyleScore(subject: ScoringProfile, candidate: ScoringProfile, weights: StyleSubWeights): number {
   const timezoneScore = subject.timezone === candidate.timezone ? 1 : 0;
   const styleCompatible =
     threeWayCompatible(subject.connectionCadence, candidate.connectionCadence) &&
@@ -109,11 +105,9 @@ function styleScore(subject: ScoringProfile, candidate: ScoringProfile, weights:
       ? 1
       : 0;
 
-  const total = weights.language + weights.timezone + weights.style;
+  const total = weights.timezone + weights.style;
   if (total === 0) return 0;
-  return (
-    (languageScore * weights.language + timezoneScore * weights.timezone + styleCompatible * weights.style) / total
-  );
+  return (timezoneScore * weights.timezone + styleCompatible * weights.style) / total;
 }
 
 export interface ScoreBreakdown {
@@ -122,7 +116,7 @@ export interface ScoreBreakdown {
   experienceScore: number;
   availabilityScore: number;
   skillsScore: number;
-  languageScore: number; // the combined language/timezone/style bucket
+  styleScore: number; // the combined timezone/connection-style bucket
   totalScore: number;
 }
 
@@ -143,7 +137,7 @@ export function computeScoreBreakdown(
     candidate.availability,
   );
   const skillsScore = jaccard(subject.tagIds, candidate.tagIds);
-  const languageScore = styleScore(subject, candidate, styleWeights);
+  const styleScore = timezoneStyleScore(subject, candidate, styleWeights);
 
   const totalScore =
     targetRoleScore * weights.targetRole +
@@ -151,9 +145,9 @@ export function computeScoreBreakdown(
     experienceScore * weights.experience +
     availabilityScore * weights.availability +
     skillsScore * weights.skills +
-    languageScore * weights.languageTimezoneStyle;
+    styleScore * weights.timezoneStyle;
 
-  return { targetRoleScore, fieldScore, experienceScore, availabilityScore, skillsScore, languageScore, totalScore };
+  return { targetRoleScore, fieldScore, experienceScore, availabilityScore, skillsScore, styleScore, totalScore };
 }
 
 export interface SafeReason {
@@ -190,8 +184,10 @@ export function generateSafeReasons(breakdown: ScoreBreakdown): SafeReason[] {
   if (breakdown.skillsScore >= REASON_THRESHOLD) {
     candidates.push({ code: "skills", labelHe: "כישורים ותחומים משותפים", percentage: Math.round(breakdown.skillsScore * 100) });
   }
-  if (breakdown.languageScore >= REASON_THRESHOLD) {
-    candidates.push({ code: "style", labelHe: "שפה, אזור זמן וסגנון חיבור תואמים", percentage: Math.round(breakdown.languageScore * 100) });
+  // Strictly above the threshold: with only two equal sub-factors, 0.5 means
+  // just one of timezone/style matches, which doesn't earn a "both compatible" label.
+  if (breakdown.styleScore > REASON_THRESHOLD) {
+    candidates.push({ code: "style", labelHe: "אזור זמן וסגנון חיבור תואמים", percentage: Math.round(breakdown.styleScore * 100) });
   }
 
   return candidates.sort((a, b) => b.percentage - a.percentage).slice(0, MAX_REASONS);

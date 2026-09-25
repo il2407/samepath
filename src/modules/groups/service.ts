@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/shared/db";
 import { checkPrivacy } from "@/modules/privacy/context";
 import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
-import type { GroupStatus, ReportCategory } from "@/generated/prisma/client";
+import type { GroupMode, GroupStatus, ReportCategory } from "@/generated/prisma/client";
 
 const VISIBLE_STATUSES: GroupStatus[] = ["OPEN", "FULL"];
 
@@ -40,9 +40,9 @@ export interface GroupSummary {
   professionalField: string | null;
   targetRole: string | null;
   seniorityRange: string | null;
-  language: string | null;
   timezone: string;
   mode: string;
+  location: string | null;
   schedule: string | null;
   theme: string | null;
   seriesLength: number | null;
@@ -50,6 +50,7 @@ export interface GroupSummary {
   memberCount: number;
   status: GroupStatus;
   myMembershipStatus: "NONE" | "ACTIVE" | "WAITLISTED" | "LEFT";
+  createdByUserId: string | null;
 }
 
 export async function listEligibleGroups(userId: string): Promise<GroupSummary[]> {
@@ -60,7 +61,6 @@ export async function listEligibleGroups(userId: string): Promise<GroupSummary[]
       targetRole: { select: { labelHe: true } },
       minSeniorityBand: { select: { labelHe: true } },
       maxSeniorityBand: { select: { labelHe: true } },
-      language: { select: { labelHe: true } },
       memberships: { where: { status: { in: ["APPROVED", "ACTIVE"] } } },
       waitlist: true,
     },
@@ -97,9 +97,9 @@ export async function listEligibleGroups(userId: string): Promise<GroupSummary[]
       professionalField: group.professionalField?.labelHe ?? null,
       targetRole: group.targetRole?.labelHe ?? null,
       seniorityRange,
-      language: group.language?.labelHe ?? null,
       timezone: group.timezone,
       mode: group.mode,
+      location: group.location,
       schedule: group.schedule,
       theme: group.theme,
       seriesLength: group.seriesLength,
@@ -107,6 +107,7 @@ export async function listEligibleGroups(userId: string): Promise<GroupSummary[]
       memberCount: group.memberships.length,
       status: group.status,
       myMembershipStatus,
+      createdByUserId: group.createdByUserId,
     });
   }
   return result;
@@ -137,7 +138,7 @@ export async function requestToJoinGroup(userId: string, groupId: string): Promi
   const hasAccess = await checkAndActivateAccessGate(userId, "FIRST_GROUP_JOIN");
   if (!hasAccess) return "ACCESS_REQUIRED";
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const group = await tx.group.findUniqueOrThrow({ where: { id: groupId } });
 
     const existing = await tx.groupMembership.findUnique({ where: { groupId_userId: { groupId, userId } } });
@@ -174,6 +175,21 @@ export async function requestToJoinGroup(userId: string, groupId: string): Promi
 
     return "JOINED" as const;
   });
+
+  if (result !== "JOINED") return result;
+
+  // Another member could have joined (or had their privacy status change)
+  // between our pre-check above and this transaction's commit. Re-verify now
+  // that membership is committed, and compensate by reverting it if it's no
+  // longer valid — same reasoning as above for why this can't run inside the
+  // transaction itself.
+  const stillEligible = await checkGroupEligibility(userId, groupId);
+  if (!stillEligible) {
+    await leaveGroup(userId, groupId);
+    return "INELIGIBLE";
+  }
+
+  return "JOINED";
 }
 
 export async function leaveGroup(userId: string, groupId: string): Promise<void> {
@@ -194,6 +210,39 @@ export async function leaveGroup(userId: string, groupId: string): Promise<void>
       }
     }
   });
+}
+
+export interface CreateGroupInput {
+  mode: GroupMode;
+  location?: string;
+  schedule?: string;
+  theme: string;
+}
+
+/**
+ * Self-service group creation: any user can open a group, visible
+ * immediately (no access-pass gate, no draft/moderation step). The creator
+ * is auto-joined as its first active member.
+ */
+export async function createGroupByUser(userId: string, input: CreateGroupInput): Promise<{ id: string }> {
+  const group = await prisma.$transaction(async (tx) => {
+    const created = await tx.group.create({
+      data: {
+        title: `קבוצת למידה — ${input.theme}`,
+        theme: input.theme,
+        mode: input.mode,
+        location: input.location || undefined,
+        schedule: input.schedule || undefined,
+        status: "OPEN",
+        createdByUserId: userId,
+      },
+    });
+    await tx.groupMembership.create({
+      data: { groupId: created.id, userId, status: "ACTIVE" },
+    });
+    return created;
+  });
+  return { id: group.id };
 }
 
 export async function reportGroupConcern(
@@ -220,7 +269,6 @@ export async function getGroupDetail(userId: string, groupId: string): Promise<G
       targetRole: { select: { labelHe: true } },
       minSeniorityBand: { select: { labelHe: true } },
       maxSeniorityBand: { select: { labelHe: true } },
-      language: { select: { labelHe: true } },
       memberships: { where: { status: { in: ["APPROVED", "ACTIVE"] } } },
       waitlist: true,
       guide: { select: { title: true, purpose: true } },
@@ -253,9 +301,9 @@ export async function getGroupDetail(userId: string, groupId: string): Promise<G
     professionalField: group.professionalField?.labelHe ?? null,
     targetRole: group.targetRole?.labelHe ?? null,
     seniorityRange,
-    language: group.language?.labelHe ?? null,
     timezone: group.timezone,
     mode: group.mode,
+    location: group.location,
     schedule: group.schedule,
     theme: group.theme,
     seriesLength: group.seriesLength,
@@ -263,6 +311,7 @@ export async function getGroupDetail(userId: string, groupId: string): Promise<G
     memberCount: group.memberships.length,
     status: group.status,
     myMembershipStatus,
+    createdByUserId: group.createdByUserId,
     guide: group.guide,
   };
 }

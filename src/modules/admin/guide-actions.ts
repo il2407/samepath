@@ -11,6 +11,8 @@ const stepSchema = z.object({
   title: z.string().min(1),
   prompt: z.string().min(1),
   kind: z.enum(["AGENDA", "PROMPT", "FOLLOWUP"]),
+  role: z.enum(["PRESENTER", "LISTENER", "BOTH"]).default("BOTH"),
+  durationMinutes: z.number().min(0).max(180).optional(),
 });
 
 const createGuideSchema = z.object({

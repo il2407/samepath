@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import { ConnectionRoom } from "@/modules/connections/ConnectionRoom";
-import type { ConnectionDetail, MeetingProposalDetail } from "@/modules/connections/service";
+import type { ConnectionDetail } from "@/modules/connections/service";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -12,18 +12,8 @@ const mocks = vi.hoisted(() => ({
   endConnectionAction: vi.fn(),
   blockConnectionAction: vi.fn(),
   reportConnectionAction: vi.fn(),
-  pickGuideForConnectionAction: vi.fn(),
-  clearConnectionGuideAction: vi.fn(),
-  setMySessionTypesAction: vi.fn(),
-  setMyIntroRequirementAction: vi.fn(),
-  listGuideOptionsAction: vi.fn(),
-  selectGuideForConnectionAction: vi.fn(),
-  proposeMeetingAction: vi.fn(),
-  acceptMeetingProposalAction: vi.fn(),
-  declineMeetingProposalAction: vi.fn(),
-  counterProposeMeetingAction: vi.fn(),
-  attachMeetLinkAction: vi.fn(),
-  generateMeetLinkAction: vi.fn(),
+  attachMeetLinkForConnectionAction: vi.fn(),
+  generateMeetLinkForConnectionAction: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -36,18 +26,8 @@ vi.mock("@/modules/connections/actions", () => ({
   endConnectionAction: mocks.endConnectionAction,
   blockConnectionAction: mocks.blockConnectionAction,
   reportConnectionAction: mocks.reportConnectionAction,
-  pickGuideForConnectionAction: mocks.pickGuideForConnectionAction,
-  clearConnectionGuideAction: mocks.clearConnectionGuideAction,
-  setMySessionTypesAction: mocks.setMySessionTypesAction,
-  setMyIntroRequirementAction: mocks.setMyIntroRequirementAction,
-  listGuideOptionsAction: mocks.listGuideOptionsAction,
-  selectGuideForConnectionAction: mocks.selectGuideForConnectionAction,
-  proposeMeetingAction: mocks.proposeMeetingAction,
-  acceptMeetingProposalAction: mocks.acceptMeetingProposalAction,
-  declineMeetingProposalAction: mocks.declineMeetingProposalAction,
-  counterProposeMeetingAction: mocks.counterProposeMeetingAction,
-  attachMeetLinkAction: mocks.attachMeetLinkAction,
-  generateMeetLinkAction: mocks.generateMeetLinkAction,
+  attachMeetLinkForConnectionAction: mocks.attachMeetLinkForConnectionAction,
+  generateMeetLinkForConnectionAction: mocks.generateMeetLinkForConnectionAction,
 }));
 
 const CURRENT_USER_ID = "user-me";
@@ -58,7 +38,6 @@ const baseOtherParty: ConnectionDetail["otherParty"] = {
   seniorityBand: "בכיר/ה",
   targetRoles: [],
   skillsAndDomains: [],
-  languages: [],
   shortIntro: "",
   connectionFormat: "BOTH",
   connectionCadence: "BOTH",
@@ -71,6 +50,8 @@ const baseOtherParty: ConnectionDetail["otherParty"] = {
   region: null,
   email: "dana@example.com",
   phoneNumber: null,
+  linkedInUrl: null,
+  yearsOfExperience: null,
 };
 
 function makeConnection(overrides: Partial<ConnectionDetail> = {}): ConnectionDetail {
@@ -81,6 +62,7 @@ function makeConnection(overrides: Partial<ConnectionDetail> = {}): ConnectionDe
     otherParty: baseOtherParty,
     otherPartyDisplayName: "דנה כהן",
     otherPartyPhotoDataUrl: null,
+    otherPartyPublishedInterviewCount: 0,
     messages: [],
     meetingStatuses: [],
     myTimezone: "Asia/Jerusalem",
@@ -89,26 +71,23 @@ function makeConnection(overrides: Partial<ConnectionDetail> = {}): ConnectionDe
     otherPartySessionTypes: [],
     myIntroStance: null,
     otherPartyIntroStance: null,
+    meetLink: null,
     ...overrides,
   };
 }
 
-const categories = [{ slug: "intro", labelHe: "פגישת היכרות בווידאו" }] as const;
-
-function renderRoom(
-  connectionOverrides: Partial<ConnectionDetail> = {},
-  meetingProposals: MeetingProposalDetail[] = [],
-  hasGoogleMeetConnected = false,
-) {
+function renderRoom(connectionOverrides: Partial<ConnectionDetail> = {}, hasGoogleMeetConnected = false) {
   return render(
     <ConnectionRoom
       connection={makeConnection(connectionOverrides)}
-      meetingProposals={meetingProposals}
       currentUserId={CURRENT_USER_ID}
-      categories={categories}
       hasGoogleMeetConnected={hasGoogleMeetConnected}
     />,
   );
+}
+
+function openMoreOptions() {
+  fireEvent.click(screen.getByRole("button", { name: "אפשרויות נוספות" }));
 }
 
 beforeEach(() => {
@@ -269,106 +248,16 @@ describe("ConnectionRoom — chat (backlog item 13)", () => {
   });
 });
 
-describe("ConnectionRoom — meeting proposals (backlog item 14)", () => {
-  it("offers to propose a meeting when there is no existing proposal", () => {
-    renderRoom();
-    expect(screen.getByRole("button", { name: "הצעת פגישת היכרות בווידאו" })).toBeInTheDocument();
-  });
-
-  it("shows accept/decline/counter-propose to the non-proposing participant when a proposal is open", () => {
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: "INTRO_VIDEO_CALL",
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal]);
-
-    expect(screen.getByRole("button", { name: "אישור ההצעה" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "דחייה" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /הצעה נגדית/ })).toBeInTheDocument();
-  });
-
-  it("never offers to accept your own open proposal — only a withdraw (decline) option", () => {
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: CURRENT_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: "INTRO_VIDEO_CALL",
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal]);
-
-    expect(screen.queryByRole("button", { name: "אישור ההצעה" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ביטול ההצעה" })).toBeInTheDocument();
-  });
-
-  it("calls acceptMeetingProposalAction with the connection and proposal ids when accepting", async () => {
-    mocks.acceptMeetingProposalAction.mockResolvedValue({ ok: true });
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: null,
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal]);
-
-    fireEvent.click(screen.getByRole("button", { name: "אישור ההצעה" }));
-
-    await waitFor(() => expect(mocks.acceptMeetingProposalAction).toHaveBeenCalledWith({ connectionId: "connection-1", proposalId: "p1" }));
-  });
-
-  it("shows a Meet link as a clickable, LTR, break-all link when present", () => {
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "ACCEPTED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: CURRENT_USER_ID,
-      respondedAt: new Date(),
-      sessionType: null,
-      meetLink: "https://meet.google.com/abc-defg-hij",
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal]);
+describe("ConnectionRoom — Google Meet link (simplified connection page)", () => {
+  it("shows a Meet link as a clickable, LTR, break-all link when one is already attached", () => {
+    renderRoom({ meetLink: "https://meet.google.com/abc-defg-hij" });
     const link = screen.getByRole("link", { name: "https://meet.google.com/abc-defg-hij" });
     expect(link).toHaveAttribute("href", "https://meet.google.com/abc-defg-hij");
     expect(link).toHaveAttribute("dir", "ltr");
   });
 
   it("offers a Google connect CTA (not a generate button) when the user has no Google Meet grant", () => {
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: null,
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal], false);
-
+    renderRoom({}, false);
     const connectLink = screen.getByRole("link", { name: "התחברות ל-Google ליצירת קישור Meet" });
     expect(connectLink).toHaveAttribute(
       "href",
@@ -377,208 +266,181 @@ describe("ConnectionRoom — meeting proposals (backlog item 14)", () => {
     expect(screen.queryByRole("button", { name: "יצירת קישור Google Meet" })).not.toBeInTheDocument();
   });
 
-  it("calls generateMeetLinkAction with the connection and proposal ids when the user has a Google Meet grant", async () => {
-    mocks.generateMeetLinkAction.mockResolvedValue({ ok: true });
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: null,
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal], true);
+  it("calls generateMeetLinkForConnectionAction with the connection id when the user has a Google Meet grant", async () => {
+    mocks.generateMeetLinkForConnectionAction.mockResolvedValue({ ok: true });
+    renderRoom({}, true);
 
     fireEvent.click(screen.getByRole("button", { name: "יצירת קישור Google Meet" }));
 
     await waitFor(() =>
-      expect(mocks.generateMeetLinkAction).toHaveBeenCalledWith({ connectionId: "connection-1", proposalId: "p1" }),
+      expect(mocks.generateMeetLinkForConnectionAction).toHaveBeenCalledWith({ connectionId: "connection-1" }),
     );
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
 
-  it("surfaces an error from generateMeetLinkAction without crashing", async () => {
-    mocks.generateMeetLinkAction.mockResolvedValue({ ok: false, error: "יצירת קישור הפגישה נכשלה, נסו שוב" });
-    const proposal: MeetingProposalDetail = {
-      id: "p1",
-      status: "PROPOSED",
-      proposedByUserId: OTHER_USER_ID,
-      respondedByUserId: null,
-      respondedAt: null,
-      sessionType: null,
-      meetLink: null,
-      scheduledAt: null,
-      previousProposalId: null,
-      createdAt: new Date(),
-    };
-    renderRoom({}, [proposal], true);
+  it("surfaces an error from generateMeetLinkForConnectionAction without crashing", async () => {
+    mocks.generateMeetLinkForConnectionAction.mockResolvedValue({ ok: false, error: "יצירת קישור הפגישה נכשלה, נסו שוב" });
+    renderRoom({}, true);
 
     fireEvent.click(screen.getByRole("button", { name: "יצירת קישור Google Meet" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("יצירת קישור הפגישה נכשלה, נסו שוב");
   });
-});
 
-describe("ConnectionRoom — intro meeting requirement stance", () => {
-  it("reflects myIntroStance as the checkbox's checked state", () => {
-    renderRoom({ myIntroStance: "REQUIRED" });
-    const checkbox = screen.getByRole("checkbox", { name: /חובה שתהיה פגישת היכרות בוידאו/ });
-    expect(checkbox).toBeChecked();
-  });
-
-  it("is unchecked when no stance has been declared yet", () => {
+  it("attaches a manually-pasted link via attachMeetLinkForConnectionAction and refreshes", async () => {
+    mocks.attachMeetLinkForConnectionAction.mockResolvedValue({ ok: true });
     renderRoom();
-    const checkbox = screen.getByRole("checkbox", { name: /חובה שתהיה פגישת היכרות בוידאו/ });
-    expect(checkbox).not.toBeChecked();
-  });
 
-  it("calls setMyIntroRequirementAction with REQUIRED when checked, and refreshes", async () => {
-    mocks.setMyIntroRequirementAction.mockResolvedValue({ ok: true });
-    renderRoom();
-    const checkbox = screen.getByRole("checkbox", { name: /חובה שתהיה פגישת היכרות בוידאו/ });
-
-    fireEvent.click(checkbox);
+    const input = screen.getByLabelText("קישור ל-Google Meet");
+    fireEvent.change(input, { target: { value: "https://meet.google.com/xyz-abcd-efg" } });
+    fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
 
     await waitFor(() =>
-      expect(mocks.setMyIntroRequirementAction).toHaveBeenCalledWith({ connectionId: "connection-1", stance: "REQUIRED" }),
+      expect(mocks.attachMeetLinkForConnectionAction).toHaveBeenCalledWith({
+        connectionId: "connection-1",
+        meetLink: "https://meet.google.com/xyz-abcd-efg",
+      }),
     );
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
 
-  it("calls setMyIntroRequirementAction with NOT_REQUIRED when unchecked", async () => {
-    mocks.setMyIntroRequirementAction.mockResolvedValue({ ok: true });
-    renderRoom({ myIntroStance: "REQUIRED" });
-    const checkbox = screen.getByRole("checkbox", { name: /חובה שתהיה פגישת היכרות בוידאו/ });
+  it("surfaces an error from attachMeetLinkForConnectionAction without crashing", async () => {
+    mocks.attachMeetLinkForConnectionAction.mockResolvedValue({ ok: false, error: "קישור לא תקין" });
+    renderRoom();
 
-    fireEvent.click(checkbox);
+    const input = screen.getByLabelText("קישור ל-Google Meet");
+    fireEvent.change(input, { target: { value: "https://not-a-meet-link.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "שמירה" }));
 
-    await waitFor(() =>
-      expect(mocks.setMyIntroRequirementAction).toHaveBeenCalledWith({ connectionId: "connection-1", stance: "NOT_REQUIRED" }),
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("קישור לא תקין");
   });
 
-  it("shows no mismatch banner when both sides agree, or neither has declared a stance", () => {
-    renderRoom({ myIntroStance: "REQUIRED", otherPartyIntroStance: "REQUIRED" });
-    expect(screen.queryByText(/לא מעוניין\/ת להמשיך בחיבור/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/אבל הצד השני סימן\/ה שזה לא הכרחי/)).not.toBeInTheDocument();
-  });
-
-  it("shows the banner, worded for the non-requiring side, when I don't require it but the other side does", () => {
-    renderRoom({ myIntroStance: "NOT_REQUIRED", otherPartyIntroStance: "REQUIRED" });
-    expect(
-      screen.getByText("הצד השני לא מעוניין/ת להמשיך בחיבור כל עוד לא הייתה פגישת היכרות בוידאו."),
-    ).toBeInTheDocument();
-  });
-
-  it("shows the banner, worded for the requiring side, when I require it but the other side doesn't", () => {
-    renderRoom({ myIntroStance: "REQUIRED", otherPartyIntroStance: "NOT_REQUIRED" });
-    expect(
-      screen.getByText("מבחינתך חובה פגישת היכרות בוידאו, אבל הצד השני סימן/ה שזה לא הכרחי מבחינתו/ה."),
-    ).toBeInTheDocument();
-  });
-
-  it("keeps chat and other panels fully interactive despite a mismatch (informational only, no gating)", () => {
-    renderRoom({ myIntroStance: "REQUIRED", otherPartyIntroStance: "NOT_REQUIRED" });
-    const input = screen.getByLabelText("כתיבת הודעה");
-    expect(input).toBeInTheDocument();
-    expect(input).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "הצעת פגישת היכרות בווידאו" })).toBeInTheDocument();
+  it("does not render the Meet link panel once the connection is no longer ACTIVE", () => {
+    renderRoom({ status: "ENDED" });
+    expect(screen.queryByText("שיחת וידאו")).not.toBeInTheDocument();
   });
 });
 
-describe("ConnectionRoom — suggested session guide picker (browse and choose)", () => {
-  it("shows category buttons when no guide is selected yet", () => {
+describe("ConnectionRoom — more options (end / block / report / mark completed)", () => {
+  it("keeps end/block/report/mark-completed hidden until 'אפשרויות נוספות' is opened", () => {
     renderRoom();
-    expect(screen.getByRole("button", { name: "פגישת היכרות בווידאו" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "סיום החיבור" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "חסימה" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "דיווח" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "סימון מפגש כהושלם" })).not.toBeInTheDocument();
   });
 
-  it("fetches and lists guide options for a category on click, without auto-picking one", async () => {
-    mocks.listGuideOptionsAction.mockResolvedValue({
-      ok: true,
-      guides: [
-        { id: "g1", title: "מדריך א", purpose: "מטרה א", suggestedDurationMinutes: 15 },
-        { id: "g2", title: "מדריך ב", purpose: "מטרה ב", suggestedDurationMinutes: 30 },
-      ],
-    });
+  it("shows end/block/report/mark-completed once opened", () => {
     renderRoom();
-
-    fireEvent.click(screen.getByRole("button", { name: "פגישת היכרות בווידאו" }));
-
-    await screen.findByText("מדריך א");
-    expect(screen.getByText("מדריך ב")).toBeInTheDocument();
-    expect(mocks.listGuideOptionsAction).toHaveBeenCalledWith({ connectionId: "connection-1", category: "intro" });
-    expect(mocks.pickGuideForConnectionAction).not.toHaveBeenCalled();
+    openMoreOptions();
+    expect(screen.getByRole("button", { name: "סיום החיבור" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "חסימה" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "דיווח" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "סימון מפגש כהושלם" })).toBeInTheDocument();
   });
 
-  it("collapses the guide list when the same category button is clicked again", async () => {
-    mocks.listGuideOptionsAction.mockResolvedValue({
-      ok: true,
-      guides: [{ id: "g1", title: "מדריך א", purpose: "מטרה א", suggestedDurationMinutes: 15 }],
-    });
+  it("calls endConnectionAction and refreshes on success", async () => {
+    mocks.endConnectionAction.mockResolvedValue({ ok: true });
     renderRoom();
-    const categoryButton = screen.getByRole("button", { name: "פגישת היכרות בווידאו" });
+    openMoreOptions();
 
-    fireEvent.click(categoryButton);
-    await screen.findByText("מדריך א");
-    fireEvent.click(categoryButton);
+    fireEvent.click(screen.getByRole("button", { name: "סיום החיבור" }));
 
-    expect(screen.queryByText("מדריך א")).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.endConnectionAction).toHaveBeenCalledWith("connection-1"));
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
 
-  it("shows an empty-state message when the category has no published guides", async () => {
-    mocks.listGuideOptionsAction.mockResolvedValue({ ok: true, guides: [] });
+  it("calls blockConnectionAction and refreshes on success", async () => {
+    mocks.blockConnectionAction.mockResolvedValue({ ok: true });
     renderRoom();
+    openMoreOptions();
 
-    fireEvent.click(screen.getByRole("button", { name: "פגישת היכרות בווידאו" }));
+    fireEvent.click(screen.getByRole("button", { name: "חסימה" }));
 
-    expect(await screen.findByText("אין עדיין מערכי שיעור בקטגוריה הזו")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.blockConnectionAction).toHaveBeenCalledWith("connection-1"));
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
 
-  it("selects a specific guide by id via selectGuideForConnectionAction, then refreshes and closes the list", async () => {
-    mocks.listGuideOptionsAction.mockResolvedValue({
-      ok: true,
-      guides: [{ id: "g1", title: "מדריך א", purpose: "מטרה א", suggestedDurationMinutes: 15 }],
-    });
-    mocks.selectGuideForConnectionAction.mockResolvedValue({ ok: true });
+  it("calls markMeetingAction with a completedAt timestamp and refreshes", async () => {
+    mocks.markMeetingAction.mockResolvedValue({ ok: true });
     renderRoom();
+    openMoreOptions();
 
-    fireEvent.click(screen.getByRole("button", { name: "פגישת היכרות בווידאו" }));
-    await screen.findByText("מדריך א");
-    fireEvent.click(screen.getByRole("button", { name: "בחר/י" }));
+    fireEvent.click(screen.getByRole("button", { name: "סימון מפגש כהושלם" }));
+
+    await waitFor(() => expect(mocks.markMeetingAction).toHaveBeenCalled());
+    const call = mocks.markMeetingAction.mock.calls[0][0];
+    expect(call.connectionId).toBe("connection-1");
+    expect(typeof call.completedAt).toBe("string");
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+  });
+
+  it("submits a report with the chosen category and description, and refreshes on success", async () => {
+    mocks.reportConnectionAction.mockResolvedValue({ ok: true });
+    renderRoom();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("button", { name: "דיווח" }));
+
+    const textarea = screen.getByPlaceholderText("פרטים");
+    fireEvent.change(textarea, { target: { value: "התנהגות לא הולמת" } });
+    fireEvent.click(screen.getByRole("button", { name: "שליחת דיווח" }));
 
     await waitFor(() =>
-      expect(mocks.selectGuideForConnectionAction).toHaveBeenCalledWith({ connectionId: "connection-1", guideId: "g1" }),
+      expect(mocks.reportConnectionAction).toHaveBeenCalledWith({
+        connectionId: "connection-1",
+        category: "OTHER",
+        description: "התנהגות לא הולמת",
+      }),
     );
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
 
-  it("shows an error and keeps the panel open when listing guide options fails", async () => {
-    mocks.listGuideOptionsAction.mockResolvedValue({ ok: false, error: "משהו השתבש" });
+  it("surfaces an error and keeps the report form open when reportConnectionAction fails (e.g. empty description)", async () => {
+    mocks.reportConnectionAction.mockResolvedValue({ ok: false, error: "נא לפרט" });
     renderRoom();
+    openMoreOptions();
+    fireEvent.click(screen.getByRole("button", { name: "דיווח" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "פגישת היכרות בווידאו" }));
+    fireEvent.click(screen.getByRole("button", { name: "שליחת דיווח" }));
 
-    expect(await screen.findByText("משהו השתבש")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("נא לפרט");
+    expect(screen.getByPlaceholderText("פרטים")).toBeInTheDocument();
+    expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
-  it("still offers a random reroll and clear once a guide is already selected", () => {
+  it("does not render the more-options toggle once the connection is no longer ACTIVE", () => {
+    renderRoom({ status: "ENDED" });
+    expect(screen.queryByRole("button", { name: "אפשרויות נוספות" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ConnectionRoom — post-match LinkedIn reveal (backlog item 11/12, revised again: automatic, no opt-in)", () => {
+  it("shows a clear 'not provided' fallback instead of a link when the other party never entered a URL", () => {
+    renderRoom();
+    expect(screen.queryByText("פרופיל LinkedIn")).not.toBeInTheDocument();
+    expect(screen.getByText("קישור LinkedIn לא סופק")).toBeInTheDocument();
+  });
+
+  it("shows a LinkedIn link to the other party's profile automatically once a URL is on their DTO", () => {
     renderRoom({
-      selectedGuide: {
-        id: "g1",
-        title: "מדריך נבחר",
-        purpose: "מטרה",
-        category: "intro",
-        suggestedDurationMinutes: 20,
-        steps: [],
-      },
+      otherParty: { ...baseOtherParty, linkedInUrl: "https://linkedin.com/in/dana" },
     });
+    const link = screen.getByRole("link", { name: "פרופיל LinkedIn ↗" });
+    expect(link).toHaveAttribute("href", "https://linkedin.com/in/dana");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+});
 
-    expect(screen.getByRole("button", { name: "הצעה אחרת מאותה קטגוריה" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "הסרת המבנה המוצע" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "פגישת היכרות בווידאו" })).not.toBeInTheDocument();
+describe("ConnectionRoom — post-match full name / workplace, shown automatically with a clear fallback when missing", () => {
+  it("shows the other party's real full name and workplace once connected", () => {
+    renderRoom({ otherParty: { ...baseOtherParty, fullName: "דנה כהן", company: "Acme Inc" } });
+    expect(screen.getByText("דנה כהן")).toBeInTheDocument();
+    expect(screen.getByText("Acme Inc", { exact: false })).toBeInTheDocument();
+  });
+
+  it("shows a clear 'not provided' fallback instead of fabricating a name or workplace", () => {
+    renderRoom({ otherParty: { ...baseOtherParty, fullName: null, company: null } });
+    expect(screen.getByText("שם מלא לא סופק")).toBeInTheDocument();
+    expect(screen.getByText("מעסיק לא צוין", { exact: false })).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 /**
  * Reference/lookup rows. Deliberately data, not enums, per the spec's
- * extensibility requirement — adding a profession, role, band, language, or
+ * extensibility requirement — adding a profession, role, band, or
  * region later is an admin edit, not a migration. v1 markets narrowly to
  * backend/backend-oriented-fullstack, but nothing here hard-codes that
  * narrowness into the schema or the seed.
@@ -59,15 +59,6 @@ export async function seedReferenceData(prisma: PrismaClient) {
     await prisma.seniorityBand.upsert({ where: { code: band.code }, update: band, create: band });
   }
 
-  const languages = [
-    { code: "he", labelHe: "עברית", labelEn: "Hebrew" },
-    { code: "en", labelHe: "אנגלית", labelEn: "English" },
-    { code: "ar", labelHe: "ערבית", labelEn: "Arabic" },
-    { code: "ru", labelHe: "רוסית", labelEn: "Russian" },
-  ];
-  for (const language of languages) {
-    await prisma.language.upsert({ where: { code: language.code }, update: language, create: language });
-  }
 
   const regions = [
     { code: "il", labelHe: "ישראל", labelEn: "Israel", kind: "COUNTRY" },

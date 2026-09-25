@@ -19,13 +19,10 @@ export default async function PrivacySettingsPage() {
   return (
     <Container className="max-w-2xl py-10">
       <h1 className="text-2xl font-bold text-ink">הגדרות פרטיות</h1>
-      <p className="mt-2 text-muted">
-        המעסיק הנוכחי שלכם:{" "}
-        <strong className="text-ink">{profile.currentCompany?.canonicalName ?? "לא הוגדר"}</strong>
-      </p>
 
       <div className="mt-8">
         <PrivacySettingsForm
+          currentCompanyName={profile.currentCompany?.canonicalName ?? null}
           initial={{
             blockedCompanies: blockedCompanies.map((b) => ({
               company: { id: b.company.id, canonicalName: b.company.canonicalName },
@@ -37,7 +34,9 @@ export default async function PrivacySettingsPage() {
             photoDataUrl,
             sharePhotoPostMatch: profile.disclosurePreference?.sharePhotoPostMatch ?? false,
             phoneNumber: profile.disclosurePreference?.phoneNumber ?? "",
-            resumeRetentionPreference: profile.resumeRetentionPreference,
+            email: user.email,
+            shareEmailPostMatch: profile.disclosurePreference?.shareEmailPostMatch ?? false,
+            sharePhonePostMatch: profile.disclosurePreference?.sharePhonePostMatch ?? false,
           }}
         />
       </div>

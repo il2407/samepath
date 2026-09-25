@@ -121,7 +121,14 @@ export function SuggestionCard({
               {candidate.cvVerified && <CvVerifiedBadge />}
             </p>
             <p className="text-sm text-muted">
-              {[candidate.company, candidate.professionalField, candidate.seniorityBand].filter(Boolean).join(" · ")}
+              {[
+                candidate.company,
+                candidate.professionalField,
+                candidate.seniorityBand,
+                candidate.yearsOfExperience != null ? `${candidate.yearsOfExperience} שנות ניסיון` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
           </div>
         </div>
@@ -167,9 +174,6 @@ export function SuggestionCard({
         <Tag label={connectionFormatLabels[candidate.connectionFormat]} />
         <Tag label={connectionCadenceLabels[candidate.connectionCadence]} />
         <Tag label={connectionModeLabels[candidate.connectionMode]} />
-        {candidate.languages.map((l) => (
-          <Tag key={l} label={l} />
-        ))}
         {candidate.reasons.map((r) => (
           <Tag key={r} label={connectionReasonLabels[r]} />
         ))}

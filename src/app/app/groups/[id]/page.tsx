@@ -19,9 +19,9 @@ export default async function GroupDetailPage({ params }: PageProps<"/app/groups
       </p>
 
       <dl className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-border bg-white p-6 text-sm">
-        <Field label="שפה" value={group.language} />
         <Field label="אזור זמן" value={group.timezone} />
         <Field label="אופן מפגש" value={connectionModeLabels[group.mode]} />
+        <Field label="מקום" value={group.location} />
         <Field label="לוח זמנים" value={group.schedule} />
         <Field label="נושא" value={group.theme} />
         <Field label="אורך סדרת מפגשים" value={group.seriesLength ? `${group.seriesLength} מפגשים` : null} />

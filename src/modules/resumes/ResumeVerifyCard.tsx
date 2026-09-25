@@ -4,6 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { discardResumeDraftAction, verifyResumeFromSettingsAction, type ActionState } from "@/modules/resumes/actions";
 import type { StoredExtractedResumeData } from "@/modules/resumes/dto";
+import { ExtractedResumeSummary } from "@/modules/resumes/ExtractedResumeSummary";
+
+interface Option {
+  id: string;
+  labelHe: string;
+}
 
 /**
  * The settings-page counterpart to ResumeDraftReview: an already-active
@@ -16,20 +22,23 @@ export function ResumeVerifyCard({
   uploadId,
   originalFilename,
   extracted,
+  skills,
+  domains,
 }: {
   uploadId: string;
   originalFilename: string;
   extracted: StoredExtractedResumeData;
+  skills: Option[];
+  domains: Option[];
 }) {
   const router = useRouter();
-  const [keepFile, setKeepFile] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   function confirm() {
     setError(null);
     startTransition(async () => {
-      const result: ActionState = await verifyResumeFromSettingsAction({ uploadId, keepFile });
+      const result: ActionState = await verifyResumeFromSettingsAction({ uploadId });
       if (!result.ok) return setError(result.error ?? "משהו השתבש");
       router.refresh();
     });
@@ -52,26 +61,8 @@ export function ResumeVerifyCard({
         תג &quot;קו״ח מאומתים&quot; שמופיע בפני מועמדים אחרים.
       </p>
 
-      {extracted.positions.length > 0 && (
-        <ul className="mt-4 space-y-2">
-          {extracted.positions.map((p, index) => (
-            <li key={index} className="rounded-xl bg-paper p-3 text-sm text-ink">
-              <span className="font-medium">{p.title}</span> · {p.companyName}
-              <span className="text-muted">
-                {" "}
-                ({p.startMonth}
-                {p.endMonth ? `–${p.endMonth}` : p.isCurrent ? "–היום" : ""})
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-4 rounded-xl bg-paper p-3">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={keepFile} onChange={(e) => setKeepFile(e.target.checked)} />
-          לשמור את קובץ קורות החיים המקורי במערכת (ברירת המחדל: הקובץ נמחק לאחר האישור)
-        </label>
+      <div className="mt-4 rounded-xl border border-border bg-paper p-4">
+        <ExtractedResumeSummary extracted={extracted} skills={skills} domains={domains} />
       </div>
 
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}

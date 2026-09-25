@@ -1,4 +1,6 @@
 import "server-only";
+import { loadSharedPractice } from "./content-service";
+import type { SharedPractice } from "./content";
 import { prisma } from "@/shared/db";
 import { checkPrivacy } from "@/modules/privacy/context";
 import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
@@ -9,7 +11,7 @@ import { getStorage } from "@/shared/storage";
 import { validateMeetLink } from "@/modules/connections/meeting-link";
 import { getGoogleMeetClient } from "@/modules/auth/google-meet";
 import { decryptSecret, encryptSecret } from "@/modules/auth/crypto";
-import type { ConnectionReason, IntroMeetingStance } from "@/generated/prisma/client";
+import { Prisma, type ConnectionReason, type IntroMeetingStance } from "@/generated/prisma/client";
 
 /**
  * Reads the actual photo bytes back out of storage as a data URL — never
@@ -49,6 +51,21 @@ export interface ConnectionListItem {
   status: string;
   createdAt: Date;
   otherPartyDisplayName: string;
+  /**
+   * The candidate's real full name, company, and LinkedIn URL — shown
+   * directly on the connections list (not just one click away in the
+   * detail view) so both sides can immediately assess who they matched
+   * with, per the mutual-and-complete-on-approval disclosure rule. Null
+   * when the candidate never entered that field; the UI must say so
+   * explicitly rather than leaving it blank or reusing the anonymous
+   * nickname.
+   */
+  otherPartyFullName: string | null;
+  otherPartyCompany: string | null;
+  otherPartyLinkedInUrl: string | null;
+  otherPartyPhotoDataUrl?: string | null;
+  otherPartyRole?: string | null;
+  practice?: SharedPractice;
 }
 
 export async function listConnectionsForUser(userId: string): Promise<ConnectionListItem[]> {
@@ -60,12 +77,20 @@ export async function listConnectionsForUser(userId: string): Promise<Connection
   const items: ConnectionListItem[] = [];
   for (const c of connections) {
     const otherUserId = c.userAId === userId ? c.userBId : c.userAId;
+    if (!(await checkPrivacy(userId, otherUserId, { context: "CONNECTION", contextId: c.id })).allowed) continue;
     const raw = await loadRawProfileForDto(otherUserId);
+    const dto = raw ? toPostMatchDTO(raw) : null;
     items.push({
       id: c.id,
       status: c.status,
       createdAt: c.createdAt,
-      otherPartyDisplayName: resolveDisplayName(raw ? toPostMatchDTO(raw).fullName : null, c.matchSuggestionId),
+      otherPartyDisplayName: resolveDisplayName(dto?.fullName ?? null, c.matchSuggestionId),
+      otherPartyFullName: dto?.fullName ?? null,
+      otherPartyCompany: dto?.company ?? null,
+      otherPartyLinkedInUrl: dto?.linkedInUrl ?? null,
+      otherPartyPhotoDataUrl: await loadPhotoDataUrl(raw?.disclosurePreference ?? null),
+      otherPartyRole: dto?.currentRoleTitle || dto?.professionalField || null,
+      practice: await loadSharedPractice(c),
     });
   }
   return items;
@@ -91,6 +116,7 @@ export interface SelectedGuideDetail {
 }
 
 export interface ConnectionDetail {
+  practice?: SharedPractice;
   id: string;
   status: string;
   createdAt: Date;
@@ -98,6 +124,8 @@ export interface ConnectionDetail {
   otherPartyDisplayName: string;
   /** Only set when the other party opted into sharePhotoPostMatch and actually uploaded a photo — otherwise the UI falls back to the initials avatar. */
   otherPartyPhotoDataUrl: string | null;
+  /** Count of the other party's own PUBLISHED interview experience write-ups (see InterviewExperience.status) — a trust signal shown on the contact card, same spirit as cvVerified. Zero renders as no badge, never a "0 questions" label. */
+  otherPartyPublishedInterviewCount: number;
   messages: { id: string; senderId: string; body: string; createdAt: Date }[];
   meetingStatuses: { id: string; scheduledAt: Date | null; completedAt: Date | null; note: string | null }[];
   /** The *viewer's own* configured timezone (ConnectionPreference.timezone, from onboarding) — used only for display-side formatting of a meeting proposal's scheduledAt, never for cross-timezone conversion. Reading one's own preference here has no privacy implication (it's not the other party's data). */
@@ -109,6 +137,8 @@ export interface ConnectionDetail {
   /** Each side's independent, informational-only stance on whether a video intro meeting is a prerequisite for them — null means no stance declared yet. Never technically enforced; see IntroRequirementBanner in ConnectionRoom.tsx. */
   myIntroStance: IntroMeetingStance | null;
   otherPartyIntroStance: IntroMeetingStance | null;
+  /** The most recently attached/generated Google Meet link for this connection, if any — the latest MeetingProposal row's meetLink, regardless of that row's negotiation status (see getOrCreateMeetLinkHolderProposal below). Null until either party attaches or generates one. */
+  meetLink: string | null;
 }
 
 export interface MeetingProposalDetail {
@@ -134,6 +164,7 @@ export async function getConnectionDetail(userId: string, connectionId: string):
       selectedGuide: { include: { steps: { orderBy: { order: "asc" } } } },
       sessionTypeSelections: true,
       introRequirements: true,
+      meetingProposals: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
   if (!connection) return null;
@@ -149,18 +180,24 @@ export async function getConnectionDetail(userId: string, connectionId: string):
 
   const otherParty = toPostMatchDTO(raw);
 
+  const otherPartyPublishedInterviewCount = await prisma.interviewExperience.count({
+    where: { authorId: otherUserId, status: "PUBLISHED" },
+  });
+
   const myProfile = await prisma.professionalProfile.findUnique({
     where: { userId },
     select: { connectionPreference: { select: { timezone: true } } },
   });
 
   return {
+    practice: await loadSharedPractice(connection),
     id: connection.id,
     status: connection.status,
     createdAt: connection.createdAt,
     otherParty,
     otherPartyDisplayName: resolveDisplayName(otherParty.fullName, connection.matchSuggestionId),
     otherPartyPhotoDataUrl: await loadPhotoDataUrl(raw.disclosurePreference),
+    otherPartyPublishedInterviewCount,
     messages: connection.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, createdAt: m.createdAt })),
     meetingStatuses: connection.meetingStatuses.map((m) => ({
       id: m.id,
@@ -191,6 +228,7 @@ export async function getConnectionDetail(userId: string, connectionId: string):
     otherPartySessionTypes: connection.sessionTypeSelections.find((s) => s.userId === otherUserId)?.sessionTypes ?? [],
     myIntroStance: connection.introRequirements.find((r) => r.userId === userId)?.stance ?? null,
     otherPartyIntroStance: connection.introRequirements.find((r) => r.userId === otherUserId)?.stance ?? null,
+    meetLink: connection.meetingProposals[0]?.meetLink ?? null,
   };
 }
 
@@ -269,18 +307,17 @@ export async function sendMessage(userId: string, connectionId: string, body: st
 // filled in afterward). See prisma/schema.prisma's MeetingProposalStatus doc
 // comment for the exact state-machine semantics this code implements.
 //
-// Deliberately kept out of getConnectionDetail's query/return shape above:
-// per this wave's migration protocol, the `meeting_proposals` table has no
-// migration yet (the coordinator applies it after rebasing this branch), so
-// any query against it throws "relation does not exist" until then. Bundling
-// it into getConnectionDetail's single `include` would have broken every
-// existing connection test (messages, session types, guides, disclosure) and
-// the entire connection room page, not just the new meeting-proposal
-// feature. Keeping it as its own read path (getMeetingProposals below,
-// queried separately by the page) means only meeting-proposal-specific code
-// is affected pre-migration — everything else in this module keeps working
-// and stays fully tested today. See the WS7 final report's "known
-// limitations" section.
+// The full propose/accept/decline/counter-propose negotiation UI has been
+// removed from the connection room (meeting coordination now happens over
+// free-form chat instead) — but the underlying MeetingProposal table, its
+// state machine, and every function below stay in place: they're still the
+// holder of the connection's Google Meet link (see
+// getOrCreateMeetLinkHolderProposal below), and getMeetingProposals/
+// propose/accept/decline/counterPropose remain available server-side for
+// any caller that still needs the full negotiation history. getConnectionDetail
+// above includes only the single latest MeetingProposal row (for its
+// `meetLink` field) — getMeetingProposals here is still the way to load the
+// full history when needed.
 // ---------------------------------------------------------------------------
 
 /**
@@ -337,6 +374,55 @@ function normalizeMeetLink(raw: string | null | undefined): string | null {
 
 async function getLatestProposal(connectionId: string) {
   return prisma.meetingProposal.findFirst({ where: { connectionId }, orderBy: { createdAt: "desc" } });
+}
+
+/**
+ * The simplified connection room has no proposal-negotiation UI, but
+ * attach/generate-meet-link still write onto a MeetingProposal row (its
+ * `meetLink` column). This returns the connection's existing proposal if one
+ * already exists (from prior negotiation-flow use, or a prior Meet-link
+ * action), or creates a minimal placeholder row to hold the link if none
+ * exists yet. Uses a serializable transaction + retry to stay race-safe
+ * against concurrent double-clicks of "create meet link" with no existing
+ * proposal — there's no unique constraint on connectionId (would break
+ * multi-proposal negotiation), so the transaction isolation level is what
+ * prevents two concurrent calls from each creating their own row.
+ */
+async function getOrCreateMeetLinkHolderProposal(userId: string, connectionId: string) {
+  const connection = await prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+  assertParticipant(connection, userId);
+
+  const existing = await getLatestProposal(connectionId);
+  if (existing) return existing;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const stillNone = await tx.meetingProposal.findFirst({ where: { connectionId } });
+          if (stillNone) return stillNone;
+          return tx.meetingProposal.create({ data: { connectionId, proposedByUserId: userId } });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt === 0) continue;
+      throw error;
+    }
+  }
+  throw new Error("unreachable");
+}
+
+/** Attaches a manually-pasted Google Meet link to a connection with no proposal-negotiation UI — gets or creates the connection's meet-link-holder proposal, then delegates to attachMeetLink's existing validation/permission logic. */
+export async function attachMeetLinkForConnection(userId: string, connectionId: string, meetLink: string): Promise<void> {
+  const proposal = await getOrCreateMeetLinkHolderProposal(userId, connectionId);
+  await attachMeetLink(userId, connectionId, proposal.id, meetLink);
+}
+
+/** Generates a real Google Meet link (Meet API v2) for a connection with no proposal-negotiation UI — gets or creates the connection's meet-link-holder proposal, then delegates to generateMeetLink's existing grant/API logic. */
+export async function generateMeetLinkForConnection(userId: string, connectionId: string): Promise<void> {
+  const proposal = await getOrCreateMeetLinkHolderProposal(userId, connectionId);
+  await generateMeetLink(userId, connectionId, proposal.id);
 }
 
 export interface ProposeMeetingInput {

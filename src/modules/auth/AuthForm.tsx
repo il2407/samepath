@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
 import { loginWithPasswordAction, registerWithPasswordAction } from "@/modules/auth/actions";
+import { isValidPassword } from "@/modules/auth/validation";
 
 type Mode = "register" | "login";
 
@@ -29,8 +30,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
     }
 
     startTransition(async () => {
-      const action = mode === "register" ? registerWithPasswordAction : loginWithPasswordAction;
-      const result = await action({ email, password });
+      const result =
+        mode === "register"
+          ? await registerWithPasswordAction({ email, password })
+          : await loginWithPasswordAction({ email, password });
       // A successful submit redirects server-side and never returns here.
       if (result && !result.ok) {
         setError(result.error ?? "משהו השתבש. נסו שוב");
@@ -143,18 +146,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
 }
 
 function PasswordRequirements({ password }: { password: string }) {
-  const meetsMin = password.length >= MIN_PASSWORD_LENGTH;
+  const meetsRequirements = isValidPassword(password);
 
   return (
     <div className="mt-2 rounded-xl bg-sand px-4 py-3">
-      <div className={cn("flex items-center gap-1.5 text-xs", meetsMin ? "text-primary-dark" : "text-muted")}>
-        <RequirementIcon met={meetsMin} />
-        <span>לפחות {MIN_PASSWORD_LENGTH} תווים</span>
+      <div className={cn("flex items-center gap-1.5 text-xs", meetsRequirements ? "text-primary-dark" : "text-muted")}>
+        <RequirementIcon met={meetsRequirements} />
+        <span>לפחות {MIN_PASSWORD_LENGTH} תווים, עם אות ומספר</span>
       </div>
-      <p className="mt-1.5 text-xs text-muted">
-        עד {MAX_PASSWORD_LENGTH} תווים. מומלץ לבחור צירוף מילים שקל לכם לזכור וקשה לאחרים לנחש, ולא סיסמה ששימשה
-        אתכם באתר אחר.
-      </p>
     </div>
   );
 }

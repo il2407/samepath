@@ -49,11 +49,13 @@ password method could be added later without a migration.
 
 ## 5. Reference data as rows, not enums
 
-`ProfessionalField`, `TargetRole`, `SeniorityBand`, `Language`, `Region` are
+`ProfessionalField`, `TargetRole`, `SeniorityBand`, `Region` are
 lookup tables, not Prisma enums, per the spec's explicit requirement that new
-professions/countries/languages/seniority bands be addable "without rewriting
+professions/countries/seniority bands be addable "without rewriting
 the platform." A Prisma enum requires a migration to add a value; a table
-row does not.
+row does not. (A `Language` table existed here too until language was
+removed as a matching factor entirely — migration
+`20260924150000_remove_language`.)
 
 ## 6. Skills, domains, and interview topics share one `Tag` table
 

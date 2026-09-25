@@ -116,7 +116,7 @@ export async function requireModerator(): Promise<User> {
 /** Redirects away from auth pages (/login, /register) when already signed in. */
 export async function redirectIfAuthenticated(): Promise<void> {
   const session = await getCurrentSession();
-  if (session) redirect("/app");
+  if (session) redirect(session.user.role === "MEMBER" ? "/app" : "/admin");
 }
 
 export async function setPendingVerificationCookie(verificationId: string): Promise<void> {

@@ -8,6 +8,7 @@ import {
   getMidStageMatchesForUser,
   recordMatchDecision,
   retryAccessCheckSuggestionsForUser,
+  searchNewSuggestionsOnVisit,
 } from "@/modules/matching/service";
 import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 
@@ -83,6 +84,31 @@ describe("generateSuggestionsForUser", () => {
     const countAfterSecond = await prisma.matchSuggestion.count();
 
     expect(countAfterSecond).toBe(countAfterFirst);
+  });
+});
+
+describe("searchNewSuggestionsOnVisit", () => {
+  it("creates new suggestions on entry and notifies both sides in-app", async () => {
+    const { field, role } = await seedRole();
+    const subject = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+    const candidate = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+
+    expect(await searchNewSuggestionsOnVisit(subject.user.id)).toBe(1);
+
+    const subjectNotes = await prisma.notification.findMany({ where: { userId: subject.user.id } });
+    expect(subjectNotes).toHaveLength(1);
+    expect(subjectNotes[0]).toMatchObject({ type: "NEW_MATCH", payload: { newCount: 1 } });
+    const candidateNotes = await prisma.notification.findMany({ where: { userId: candidate.user.id } });
+    expect(candidateNotes).toHaveLength(1);
+    expect(candidateNotes[0].type).toBe("NEW_MATCH");
+  });
+
+  it("creates no notification when there is nothing new to suggest", async () => {
+    const { field, role } = await seedRole();
+    const subject = await createTestUser({ professionalFieldId: field.id, targetRoleIds: [role.id] });
+
+    expect(await searchNewSuggestionsOnVisit(subject.user.id)).toBe(0);
+    expect(await prisma.notification.count()).toBe(0);
   });
 });
 

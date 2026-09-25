@@ -3,8 +3,41 @@ import { prisma } from "@/shared/db";
 import { calculateApprovalReward } from "@/modules/credits/rewards";
 import { loadRewardPolicy, grantCreditsIdempotent, reverseCreditGrant } from "@/modules/credits/service";
 import { scanForProhibitedContent, findLikelyDuplicates } from "@/modules/interviews/duplicate-detection";
+import { createNotification } from "@/modules/notifications/service";
+import { NOTIFICATION_TYPES } from "@/modules/notifications/types";
+import { getMailer } from "@/modules/notifications/mailer";
+import { contributionDecisionEmail, type ContributionDecision } from "@/modules/notifications/email-templates";
 
 const DEFAULT_PUBLICATION_DELAY_DAYS = 14;
+
+const DECISION_NOTIFICATION = {
+  APPROVED: NOTIFICATION_TYPES.CONTRIBUTION_APPROVED,
+  REJECTED: NOTIFICATION_TYPES.CONTRIBUTION_REJECTED,
+  NEEDS_CHANGES: NOTIFICATION_TYPES.CONTRIBUTION_NEEDS_CHANGES,
+} as const;
+
+/**
+ * Tells the author (in-app + email) what the team decided. Runs after the
+ * decision is committed; a mail failure is logged, never rolled back into the
+ * moderation decision itself.
+ */
+async function notifyAuthorOfDecision(
+  experienceId: string,
+  decision: ContributionDecision,
+  message?: string | null,
+): Promise<void> {
+  const experience = await prisma.interviewExperience.findUniqueOrThrow({
+    where: { id: experienceId },
+    select: { authorId: true, author: { select: { email: true } }, company: { select: { canonicalName: true } } },
+  });
+  await createNotification(experience.authorId, DECISION_NOTIFICATION[decision], { experienceId });
+  try {
+    const email = contributionDecisionEmail({ decision, companyName: experience.company.canonicalName, message });
+    await getMailer().send({ to: experience.author.email, ...email });
+  } catch (error) {
+    console.error("[moderation] failed to email contribution decision", { experienceId, error });
+  }
+}
 
 export async function listPendingContributions() {
   return prisma.interviewExperience.findMany({
@@ -25,6 +58,7 @@ export interface ModerationQueueItem {
   periodQuarter: number;
   processDescription: string;
   questionCount: number;
+  questions: string[];
   contentWarnings: string[];
   likelyDuplicateQuestions: number;
   createdAt: Date;
@@ -60,6 +94,7 @@ export async function getModerationQueue(): Promise<ModerationQueueItem[]> {
       periodQuarter: experience.periodQuarter,
       processDescription: experience.processDescription,
       questionCount: experience.questions.length,
+      questions: [...experience.questions].sort((a, b) => a.order - b.order).map((q) => q.text),
       contentWarnings: [...warnings],
       likelyDuplicateQuestions: duplicateCount,
       createdAt: experience.createdAt,
@@ -97,6 +132,8 @@ export async function approveContribution(
   if (reward > 0) {
     await grantCreditsIdempotent(experience.authorId, reward, "CONTRIBUTION_APPROVED", `approval:${experienceId}`, experienceId);
   }
+
+  await notifyAuthorOfDecision(experienceId, "APPROVED");
 }
 
 export async function requestChanges(moderatorId: string, experienceId: string, message: string): Promise<void> {
@@ -108,6 +145,8 @@ export async function requestChanges(moderatorId: string, experienceId: string, 
     prisma.contributionReview.create({ data: { experienceId, moderatorId, action: "REQUEST_CHANGES" } }),
     prisma.contributionRevisionRequest.create({ data: { experienceId, moderatorId, message } }),
   ]);
+
+  await notifyAuthorOfDecision(experienceId, "NEEDS_CHANGES", message);
 }
 
 export async function rejectContribution(moderatorId: string, experienceId: string, notes?: string): Promise<void> {
@@ -118,6 +157,8 @@ export async function rejectContribution(moderatorId: string, experienceId: stri
     prisma.interviewExperience.update({ where: { id: experienceId }, data: { status: "REJECTED" } }),
     prisma.contributionReview.create({ data: { experienceId, moderatorId, action: "REJECT", notes } }),
   ]);
+
+  await notifyAuthorOfDecision(experienceId, "REJECTED", notes);
 }
 
 /** For fraud/duplication/serious policy violations — reverses any reward already granted. Never for a routine takedown of otherwise-fine content. */

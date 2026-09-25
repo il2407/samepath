@@ -25,6 +25,9 @@ export interface TestDisclosureOptions {
   /** Repurposed (backlog item 9/10, see profiles/dto.ts): "reveal first name early, at the mutual-interest stage." */
   shareFullNamePostMatch?: boolean;
   phoneNumber?: string;
+  linkedInUrl?: string;
+  shareEmailPostMatch?: boolean;
+  sharePhonePostMatch?: boolean;
 }
 
 export interface TestUserOptions {
@@ -42,7 +45,6 @@ export interface TestUserOptions {
   professionalFieldId?: string;
   targetRoleIds?: string[];
   tagIds?: string[];
-  languageIds?: string[];
   experienceMonths?: number;
   gender?: Gender;
   genderPreference?: GenderPreference;
@@ -89,9 +91,6 @@ export async function createTestUser(options: TestUserOptions = {}) {
         ? { create: options.targetRoleIds.map((targetRoleId) => ({ targetRoleId })) }
         : undefined,
       tags: options.tagIds ? { create: options.tagIds.map((tagId) => ({ tagId })) } : undefined,
-      languages: options.languageIds
-        ? { create: options.languageIds.map((languageId) => ({ languageId })) }
-        : undefined,
     },
   });
 

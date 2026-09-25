@@ -5,6 +5,7 @@ import { listMyContributions } from "@/modules/interviews/contributions";
 import { ContributionsList } from "@/modules/interviews/ContributionsList";
 import { LinkButton } from "@/shared/ui/Button";
 import { Container } from "@/shared/ui/Container";
+import { FlowNav } from "../FlowNav";
 
 export const metadata: Metadata = { title: "התרומות שלי — SamePath" };
 
@@ -14,7 +15,8 @@ export default async function ContributionsPage() {
 
   return (
     <Container className="max-w-2xl py-10">
-      <div className="flex items-center justify-between">
+      <FlowNav />
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-ink">התרומות שלי</h1>
         <LinkButton href="/app/contributions/new" className="px-4 py-2 text-sm">
           שיתוף חוויית ראיון

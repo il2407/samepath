@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { uniqueTestEmail } from "./helpers/mail";
+import { readVerificationCode, uniqueTestEmail } from "./helpers/mail";
 import { buildMinimalPdf } from "./helpers/pdf-fixture";
 
 /**
@@ -20,42 +20,51 @@ test("upload a resume and confirm the pre-filled draft", async ({ page }) => {
   const pdfPath = path.join(dir, "resume.pdf");
   writeFileSync(pdfPath, pdfBuffer);
 
-  await page.goto("/register");
+  await page.goto("/register/create");
   await page.fill("#email", email);
   await page.fill("#password", "e2e-test-password");
   await page.fill("#confirmPassword", "e2e-test-password");
   await page.click('button[type="submit"]');
+
+  await page.waitForURL(/\/verify-email/);
+  const code = await readVerificationCode(email);
+  await page.fill("#code", code);
+  await page.click('button[type="submit"]');
+
+  await page.waitForURL(/\/app\/onboarding\/welcome/);
+  await page.getByRole("link", { name: "בואו נתחיל" }).click();
   await page.waitForURL(/\/app\/onboarding\/profile/);
 
   // Selecting a file uploads it immediately — no separate "upload" click.
   await page.setInputFiles('input[type="file"]', pdfPath);
 
-  // The draft review form replaces the blank one once extraction finishes.
-  await expect(page.getByRole("button", { name: "אישור ושמירת הפרופיל" })).toBeVisible({ timeout: 15_000 });
-  // The extracted company name lands as the CompanyPicker input's value,
-  // not as standalone page text.
-  await expect(page.getByPlaceholder("שם החברה הנוכחית")).toHaveValue(companyName);
-  await expect(page.locator("#currentRoleTitle")).toHaveValue("Senior Backend Developer");
+  // The draft review card (one clickable row per extracted field — not the
+  // full manual form) replaces the blank one once extraction finishes.
+  await expect(page.getByRole("button", { name: "אישור והמשך" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: `מקום עבודה נוכחי: ${companyName} — עריכה` })).toBeVisible();
+  await expect(page.getByRole("button", { name: "תפקיד נוכחי: Senior Backend Developer — עריכה" })).toBeVisible();
 
   // The seeded "Backend Developer" target role label matches this resume's
   // "Senior Backend Developer" text verbatim, so the deterministic parser
-  // now pre-selects it (and the professional field chips filter to match) —
-  // see deterministic-parser.ts's target-role matching. Assert that instead
-  // of blindly clicking the first chip, which would otherwise toggle an
-  // already-selected role back off.
-  const backendRoleChip = page.getByRole("button", { name: "מפתח/ת Backend" });
-  await expect(backendRoleChip).toHaveAttribute("aria-pressed", "true");
+  // pre-selects it — see deterministic-parser.ts's target-role matching.
+  await expect(page.getByRole("button", { name: /^תפקיד\/י יעד: .*מפתח\/ת Backend/ })).toBeVisible();
 
-  const roleChip = page.getByText("תפקיד/י יעד", { exact: false }).locator("..").getByRole("button").first();
-  if ((await roleChip.getAttribute("aria-pressed")) !== "true") {
-    await roleChip.click();
-  }
-  const languageChip = page.getByText("שפות", { exact: true }).locator("..").getByRole("button").first();
-  if ((await languageChip.getAttribute("aria-pressed")) !== "true") {
-    await languageChip.click();
-  }
+  // Each row opens its own edit dialog; cancelling leaves the card unchanged.
+  await page.getByRole("button", { name: /^תפקיד\/י יעד:/ }).click();
+  const rolesDialog = page.getByRole("dialog");
+  await expect(rolesDialog.getByRole("button", { name: "מפתח/ת Backend" })).toHaveAttribute("aria-pressed", "true");
+  await rolesDialog.getByRole("button", { name: "ביטול" }).click();
+  await expect(rolesDialog).toBeHidden();
 
-  await page.getByRole("button", { name: "אישור ושמירת הפרופיל" }).click();
+  // The fixture PDF has no LinkedIn URL for the parser to find, so approving
+  // opens that field's dialog instead of submitting.
+  await page.getByRole("button", { name: "אישור והמשך" }).click();
+  const linkedInDialog = page.getByRole("dialog");
+  await linkedInDialog.getByLabel("פרופיל LinkedIn").fill("https://www.linkedin.com/in/e2e-test");
+  await linkedInDialog.getByRole("button", { name: "שמירה" }).click();
+  await expect(linkedInDialog).toBeHidden();
+
+  await page.getByRole("button", { name: "אישור והמשך" }).click();
 
   // Confirming a resume draft continues onboarding exactly like manual
   // entry does, landing on the privacy step with the extracted employer

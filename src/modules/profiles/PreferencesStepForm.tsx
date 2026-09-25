@@ -43,9 +43,9 @@ const optionalPracticeReasons: { value: Reason; label: string }[] = [
 
 const dayLabels = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const timeBlocks = [
-  { key: "morning", label: "בוקר", startMinute: 480, endMinute: 720 },
-  { key: "afternoon", label: "צהריים", startMinute: 720, endMinute: 1020 },
-  { key: "evening", label: "ערב", startMinute: 1020, endMinute: 1320 },
+  { key: "morning", label: "בוקר", hours: "08–12", selectAllLabel: "כל הבקרים", startMinute: 480, endMinute: 720 },
+  { key: "afternoon", label: "צהריים", hours: "12–17", selectAllLabel: "כל הצהריים", startMinute: 720, endMinute: 1020 },
+  { key: "evening", label: "ערב", hours: "17–22", selectAllLabel: "כל הערבים", startMinute: 1020, endMinute: 1320 },
 ] as const;
 
 export interface PreferencesStepInitial {
@@ -55,28 +55,78 @@ export interface PreferencesStepInitial {
   cadence: Cadence;
   mode: Mode;
   genderPreference: GenderPreference;
-  languageId: string | null;
   reasons: Reason[];
   availability: { dayOfWeek: number; startMinute: number; endMinute: number }[];
 }
 
+interface ExperiencePreset {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+}
+
+/** Peer-experience-range presets, anchored to the user's own CV-derived years of experience where known. */
+function buildExperiencePresets(ownYears: number | null): ExperiencePreset[] {
+  if (ownYears != null) {
+    return [
+      { id: "similar", label: "ברמת ניסיון דומה לשלי", min: Math.max(0, ownYears - 3), max: ownYears + 5 },
+      { id: "less", label: "פחות מנוסים ממני", min: 0, max: ownYears },
+      { id: "more", label: "מנוסים יותר ממני", min: ownYears, max: 40 },
+      { id: "any", label: "בכל רמת ניסיון", min: 0, max: 40 },
+    ];
+  }
+  return [
+    { id: "junior", label: "בתחילת הדרך", min: 0, max: 3 },
+    { id: "mid", label: "עם כמה שנות ניסיון", min: 2, max: 8 },
+    { id: "senior", label: "בכירים", min: 6, max: 40 },
+    { id: "any", label: "בכל רמת ניסיון", min: 0, max: 40 },
+  ];
+}
+
 export function PreferencesStepForm({
-  languages,
   initial,
   submitLabel,
+  ownExperienceYears = null,
 }: {
-  languages: { id: string; labelHe: string }[];
   /** When re-editing an already-completed preferences step (?edit=true), pre-fills the form from saved data. */
   initial?: PreferencesStepInitial;
   submitLabel?: string;
+  /** Years of experience extracted from the user's own CV, used to pre-select a sensible peer-experience range. */
+  ownExperienceYears?: number | null;
 }) {
-  const [minYears, setMinYears] = useState(initial ? initial.peerMinExperienceMonths / 12 : 0);
-  const [maxYears, setMaxYears] = useState(initial ? initial.peerMaxExperienceMonths / 12 : 15);
+  const experiencePresets = buildExperiencePresets(ownExperienceYears);
+  const defaultPreset = ownExperienceYears != null ? experiencePresets[0] : experiencePresets[experiencePresets.length - 1];
+
+  const [minYears, setMinYears] = useState(initial ? initial.peerMinExperienceMonths / 12 : defaultPreset.min);
+  const [maxYears, setMaxYears] = useState(initial ? initial.peerMaxExperienceMonths / 12 : defaultPreset.max);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(() => {
+    if (!initial) return defaultPreset.id;
+    const match = experiencePresets.find(
+      (p) => p.min === initial.peerMinExperienceMonths / 12 && p.max === initial.peerMaxExperienceMonths / 12,
+    );
+    return match?.id ?? null;
+  });
+
+  function applyPreset(preset: ExperiencePreset) {
+    setSelectedPreset(preset.id);
+    setMinYears(preset.min);
+    setMaxYears(preset.max);
+  }
+
+  function nudgeMin(delta: number) {
+    setSelectedPreset(null);
+    setMinYears((v) => Math.max(0, Math.min(maxYears, v + delta)));
+  }
+
+  function nudgeMax(delta: number) {
+    setSelectedPreset(null);
+    setMaxYears((v) => Math.max(minYears, Math.min(40, v + delta)));
+  }
   const [format, setFormat] = useState<Format>(initial?.format ?? "BOTH");
   const [cadence, setCadence] = useState<Cadence>(initial?.cadence ?? "BOTH");
   const [mode, setMode] = useState<Mode>(initial?.mode ?? "ONLINE");
   const [genderPreference, setGenderPreference] = useState<GenderPreference>(initial?.genderPreference ?? "BOTH");
-  const [languageId, setLanguageId] = useState<string>(initial?.languageId ?? languages[0]?.id ?? "");
   const [reasons, setReasons] = useState<Reason[]>(initial?.reasons ?? ["SHARE_JOB_SEARCH"]);
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(() => {
     const set = new Set<string>();
@@ -104,6 +154,32 @@ export function PreferencesStepForm({
     });
   }
 
+  function isColumnFullySelected(blockKey: string) {
+    return dayLabels.every((_, day) => selectedSlots.has(`${day}-${blockKey}`));
+  }
+
+  function toggleColumn(blockKey: string) {
+    const allSelected = isColumnFullySelected(blockKey);
+    setSelectedSlots((set) => {
+      const next = new Set(set);
+      dayLabels.forEach((_, day) => {
+        const id = `${day}-${blockKey}`;
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      });
+      return next;
+    });
+  }
+
+  const allSlotsSelected = selectedSlots.size === dayLabels.length * timeBlocks.length;
+
+  function toggleAll() {
+    setSelectedSlots(() => {
+      if (allSlotsSelected) return new Set();
+      return new Set(dayLabels.flatMap((_, day) => timeBlocks.map((b) => `${day}-${b.key}`)));
+    });
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -123,7 +199,6 @@ export function PreferencesStepForm({
         cadence,
         mode,
         genderPreference,
-        languageId: languageId || null,
         timezone: "Asia/Jerusalem",
         reasons,
         availability,
@@ -140,10 +215,23 @@ export function PreferencesStepForm({
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">טווח ניסיון של עמיתים מתאימים</h2>
-        <div className="flex items-center gap-3">
-          <NumberField label="משנה" value={minYears} onChange={setMinYears} />
+        {ownExperienceYears != null && (
+          <p className="text-sm text-muted">זיהינו מקורות החיים שיש לכם כ-{ownExperienceYears} שנות ניסיון.</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {experiencePresets.map((preset) => (
+            <ReasonChip
+              key={preset.id}
+              label={preset.label}
+              active={selectedPreset === preset.id}
+              onClick={() => applyPreset(preset)}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-4 text-sm text-ink">
+          <Stepper label="משנה" value={minYears} onDecrease={() => nudgeMin(-1)} onIncrease={() => nudgeMin(1)} />
           <span className="text-muted">עד</span>
-          <NumberField label="שנה" value={maxYears} onChange={setMaxYears} />
+          <Stepper label="שנה" value={maxYears} onDecrease={() => nudgeMax(-1)} onIncrease={() => nudgeMax(1)} />
         </div>
       </section>
 
@@ -199,31 +287,30 @@ export function PreferencesStepForm({
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-ink">שפת שיחה מועדפת</h2>
-        <select
-          value={languageId}
-          onChange={(e) => setLanguageId(e.target.value)}
-          className="w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
-        >
-          {languages.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.labelHe}
-            </option>
-          ))}
-        </select>
-      </section>
-
-      <section className="space-y-3">
         <h2 className="font-semibold text-ink">זמינות שבועית כללית</h2>
         <p className="text-sm text-muted">רק כדי לאתר חפיפה כללית בזמינות — לא לתזמון מפגש ספציפי.</p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="בחירה מהירה">
+          {timeBlocks.map((b) => (
+            <QuickSelectChip
+              key={b.key}
+              label={b.selectAllLabel}
+              active={isColumnFullySelected(b.key)}
+              onClick={() => toggleColumn(b.key)}
+            />
+          ))}
+          <QuickSelectChip label="סמן הכל" active={allSlotsSelected} onClick={toggleAll} />
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] border-collapse text-sm">
+          <table className="w-full table-fixed border-collapse text-sm">
             <thead>
               <tr>
                 <th className="p-2 text-right" />
                 {timeBlocks.map((b) => (
-                  <th key={b.key} className="p-2 text-center font-medium text-muted">
-                    {b.label}
+                  <th key={b.key} className="p-2 text-center font-medium text-ink">
+                    <span className="block">{b.label}</span>
+                    <span className="block text-xs font-normal text-muted" dir="ltr">
+                      {b.hours}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -241,11 +328,14 @@ export function PreferencesStepForm({
                           type="button"
                           onClick={() => toggleSlot(day, b.key)}
                           aria-pressed={active}
+                          aria-label={`${label}, ${b.label}`}
                           className={cn(
-                            "size-9 rounded-lg border",
-                            active ? "border-primary bg-mint" : "border-border bg-white hover:border-primary",
+                            "inline-flex size-11 items-center justify-center rounded-lg border transition-colors",
+                            active ? "border-primary bg-primary text-white" : "border-border bg-white hover:border-primary",
                           )}
-                        />
+                        >
+                          {active && <CheckIcon />}
+                        </button>
                       </td>
                     );
                   })}
@@ -282,19 +372,39 @@ export function PreferencesStepForm({
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function Stepper({
+  label,
+  value,
+  onDecrease,
+  onIncrease,
+}: {
+  label: string;
+  value: number;
+  onDecrease: () => void;
+  onIncrease: () => void;
+}) {
   return (
-    <label className="flex items-center gap-2 text-sm text-ink">
-      <input
-        type="number"
-        min={0}
-        max={40}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-20 rounded-xl border border-border bg-white px-3 py-2"
-      />
-      {label}
-    </label>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onDecrease}
+        aria-label={`הפחתת ${label}`}
+        className="flex size-8 items-center justify-center rounded-lg border border-border bg-white text-ink hover:border-primary"
+      >
+        −
+      </button>
+      <span className="w-16 text-center">
+        {value} {label}
+      </span>
+      <button
+        type="button"
+        onClick={onIncrease}
+        aria-label={`הוספת ${label}`}
+        className="flex size-8 items-center justify-center rounded-lg border border-border bg-white text-ink hover:border-primary"
+      >
+        +
+      </button>
+    </div>
   );
 }
 
@@ -331,5 +441,31 @@ function ReasonChip({ label, active, onClick }: { label: string; active: boolean
     >
       {label}
     </button>
+  );
+}
+
+/** A quick-select toggle for a whole column (or the whole grid) — reads as selected only once every cell it covers is. */
+function QuickSelectChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors",
+        active ? "border-primary bg-primary text-white hover:bg-primary-dark" : "border-border bg-white text-ink hover:border-primary",
+      )}
+    >
+      {active && <CheckIcon />}
+      {label}
+    </button>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
   );
 }

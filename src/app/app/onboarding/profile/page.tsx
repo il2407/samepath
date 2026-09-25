@@ -5,8 +5,10 @@ import { getOnboardingStep, getProfileEditData } from "@/modules/profiles/servic
 import { loadOnboardingFormOptions } from "@/modules/reference-data/service";
 import { getResumeStatusForUser } from "@/modules/resumes/service";
 import { ProfileStepOneForm, type ProfileStepOneInitialData } from "@/modules/profiles/ProfileStepOneForm";
+import { ManualEntryToggle } from "@/modules/profiles/ManualEntryToggle";
 import { ResumeUploadCard } from "@/modules/resumes/ResumeUploadCard";
 import { ResumeDraftReview } from "@/modules/resumes/ResumeDraftReview";
+import { dedupePositionsByCompany } from "@/modules/resumes/dedupe-positions";
 
 export const metadata: Metadata = { title: "פרופיל מקצועי — SamePath" };
 
@@ -45,7 +47,6 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
   const regions = options.regions.map((r) => ({ id: r.id, labelHe: r.labelHe }));
   const skills = options.skills.map((s) => ({ id: s.id, labelHe: s.labelHe }));
   const domains = options.domains.map((d) => ({ id: d.id, labelHe: d.labelHe }));
-  const languages = options.languages.map((l) => ({ id: l.id, labelHe: l.labelHe }));
 
   // Re-editing an already-completed step 1: pre-fill from the real saved
   // profile (the same pattern /app/settings/profile uses), not from any
@@ -69,7 +70,6 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
       regionId: profile.regionId,
       shortIntro: profile.shortIntro ?? "",
       tagIds: profile.tags.map((t) => t.tagId),
-      languageIds: profile.languages.map((l) => l.languageId),
       gender: profile.gender,
       currentCompany: currentPosition?.company
         ? { id: currentPosition.company.id, canonicalName: currentPosition.company.canonicalName }
@@ -82,6 +82,7 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
         startMonth: toMonthString(p.startDate),
         endMonth: p.endDate ? toMonthString(p.endDate) : "",
       })),
+      linkedInUrl: profile.disclosurePreference?.linkedInUrl ?? "",
     };
 
     return (
@@ -97,7 +98,6 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
             regions={regions}
             skills={skills}
             domains={domains}
-            languages={languages}
             initial={initial}
             submitLabel="שמירה והמשך"
           />
@@ -112,8 +112,10 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
 
   if (draft) {
     const extracted = draft.extracted;
-    const current = extracted.positions.find((p) => p.isCurrent) ?? null;
-    const previous = extracted.positions.filter((p) => p !== current);
+    // Several roles at one company are one employer on the review card.
+    const positions = dedupePositionsByCompany(extracted.positions);
+    const current = positions.find((p) => p.isCurrent) ?? null;
+    const previous = positions.filter((p) => p !== current);
 
     initialFromDraft = {
       // professionalFieldIdGuess is only ever set when a known target-role
@@ -122,12 +124,11 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
       // have something to filter by; the user still has to pick roles
       // explicitly either way (required below).
       professionalFieldId: extracted.professionalFieldIdGuess ?? fields[0]?.id ?? "",
-      targetRoleIds: extracted.matchedTargetRoleIds,
+      targetRoleIds: extracted.matchedTargetRoleIds ?? [],
       currentRoleTitle: extracted.currentRoleTitleGuess ?? current?.title ?? "",
       regionId: extracted.matchedRegionId,
       shortIntro: extracted.shortIntroGuess ?? "",
-      tagIds: extracted.matchedTagIds,
-      languageIds: extracted.matchedLanguageIds,
+      tagIds: extracted.matchedTagIds ?? [],
       currentCompany: current ? { id: current.companyId, canonicalName: current.companyName } : null,
       currentStartMonth: current?.startMonth ?? "",
       previousPositions: previous.map((p, index) => ({
@@ -137,6 +138,7 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
         startMonth: p.startMonth,
         endMonth: p.endMonth ?? "",
       })),
+      linkedInUrl: extracted.linkedInUrlGuess ?? "",
     };
   }
 
@@ -154,12 +156,12 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
             uploadId={resumeStatus.uploadId}
             originalFilename={resumeStatus.originalFilename}
             initial={initialFromDraft!}
+            extracted={draft.extracted}
             fields={fields}
             targetRoles={targetRoles}
             regions={regions}
             skills={skills}
             domains={domains}
-            languages={languages}
           />
         </div>
       )}
@@ -173,15 +175,16 @@ export default async function OnboardingProfilePage({ searchParams }: PageProps<
               failedUploadId={resumeStatus?.extractionFailed ? resumeStatus.uploadId : undefined}
             />
           </div>
-          <div className="mt-8">
-            <ProfileStepOneForm
-              fields={fields}
-              targetRoles={targetRoles}
-              regions={regions}
-              skills={skills}
-              domains={domains}
-              languages={languages}
-            />
+          <div className="mt-4">
+            <ManualEntryToggle>
+              <ProfileStepOneForm
+                fields={fields}
+                targetRoles={targetRoles}
+                regions={regions}
+                skills={skills}
+                domains={domains}
+              />
+            </ManualEntryToggle>
           </div>
         </>
       )}

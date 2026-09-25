@@ -1,0 +1,349 @@
+.header {
+  margin: 1.6rem 0 2rem;
+  max-width: 46rem;
+}
+.header h1 {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.3;
+  margin: 0.5rem 0 0.75rem;
+}
+.header > p:not(.eyebrow) {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.back {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.back:hover {
+  color: var(--color-primary);
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.3rem;
+  margin-top: 1.25rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+.meta span + span {
+  border-inline-start: 1px solid var(--color-border);
+  padding-inline-start: 1.3rem;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+  padding: 1.6rem;
+  border: 1px solid var(--color-border);
+  background: white;
+  border-radius: 16px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-warm-surface);
+}
+.card h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.65rem 0;
+}
+.card > p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: auto;
+  padding-top: 1.7rem;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+}
+.cardFooter span:first-child {
+  color: var(--color-muted);
+}
+.layout {
+  display: grid;
+  grid-template-columns: 225px minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+.overview {
+  position: sticky;
+  top: 6rem;
+  padding-top: 1rem;
+}
+.overview h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.overview ol {
+  margin: 1.3rem 0;
+  display: grid;
+  gap: 1.4rem;
+}
+.overview a {
+  display: flex;
+  gap: 0.8rem;
+  font-size: 0.85rem;
+}
+.overview a > span:first-child {
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  padding-top: 0.1rem;
+}
+.overview small {
+  display: block;
+  color: var(--color-muted);
+  margin-top: 0.2rem;
+}
+.overview p {
+  font-size: 0.8rem;
+  line-height: 1.8;
+  color: var(--color-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
+  margin-top: 1rem;
+}
+.stages {
+  min-width: 0;
+}
+.preparation {
+  padding: 1.2rem 1.4rem;
+  background: var(--color-warm-surface);
+  border-radius: 12px;
+  margin-bottom: 1.2rem;
+}
+.preparation h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.preparation p,
+.stage > p {
+  font-size: 0.9rem;
+  line-height: 1.85;
+  color: var(--color-muted);
+  margin-top: 0.6rem;
+}
+.stage {
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  margin-bottom: 1rem;
+  scroll-margin-top: 7rem;
+}
+.stageHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.stageHeading h2 {
+  font-weight: 600;
+  font-size: 1rem;
+}
+.number {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-mint);
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.duration {
+  color: var(--color-muted);
+  margin-inline-start: auto;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.exercise {
+  margin-top: 1.5rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--color-border);
+}
+.picker {
+  display: grid;
+  gap: 0.55rem;
+}
+.picker label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.picker select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: white;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.note {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  line-height: 1.8;
+  margin-top: 0.5rem;
+}
+.question {
+  padding: 1.4rem 0;
+}
+.level {
+  color: var(--color-primary);
+  font-size: 0.75rem;
+}
+.question h3 {
+  font-weight: 600;
+  font-size: 1.15rem;
+  margin: 0.35rem 0 0.7rem;
+}
+.question p {
+  font-size: 0.95rem;
+  line-height: 1.95;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.interviewer {
+  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
+}
+.disclosure {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: start;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+}
+.notes {
+  display: grid;
+  gap: 1.3rem;
+  padding-top: 1.3rem;
+}
+.notes h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.45rem;
+}
+.notes section p,
+.notes li,
+.feedback li {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  line-height: 1.85;
+}
+.notes ul,
+.feedback {
+  list-style: disc;
+  padding-inline-start: 1.25rem;
+}
+.notes li + li,
+.feedback li + li {
+  margin-top: 0.4rem;
+}
+.feedback {
+  margin-top: 1rem;
+}
+.sources,
+.additional {
+  margin-top: 2rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  line-height: 1.85;
+}
+.sources summary,
+.additional summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+.sources p {
+  margin: 0.7rem 0;
+}
+.sources a {
+  display: block;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.additional a {
+  display: block;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.workspace :is(a, button, select, summary):focus-visible,
+.card:focus-visible,
+.additional summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+}
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+  .overview {
+    position: static;
+    padding: 0 0 1rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .overview ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    margin: 1rem 0;
+  }
+  .overview p {
+    border: 0;
+    padding: 0;
+    margin-top: 0.6rem;
+  }
+  .stage {
+    padding: 1.1rem;
+  }
+}
+@media (max-width: 520px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card {
+    min-height: 185px;
+    padding: 1.3rem;
+  }
+  .meta {
+    gap: 0.5rem 0.8rem;
+  }
+  .meta span + span {
+    padding-inline-start: 0.8rem;
+  }
+  .stageHeading {
+    flex-wrap: wrap;
+  }
+}

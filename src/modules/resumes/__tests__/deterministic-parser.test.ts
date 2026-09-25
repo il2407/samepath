@@ -7,11 +7,6 @@ const skillLabels: KnownLabel[] = [
   { id: "skill-react", labelHe: "ריאקט", labelEn: "React" },
 ];
 
-const languageLabels: KnownLabel[] = [
-  { id: "lang-he", labelHe: "עברית", labelEn: "Hebrew" },
-  { id: "lang-en", labelHe: "אנגלית", labelEn: "English" },
-];
-
 const targetRoleLabels: KnownLabel[] = [
   { id: "role-backend", labelHe: "מפתח/ת Backend", labelEn: "Backend Developer" },
   { id: "role-frontend", labelHe: "מפתח/ת Frontend", labelEn: "Frontend Developer" },
@@ -157,12 +152,6 @@ describe("parseResumeText", () => {
     expect(result.matchedTagIds.sort()).toEqual(["skill-pg", "skill-react", "skill-ts"]);
   });
 
-  it("matches known language labels", () => {
-    const text = "שפות: עברית (שפת אם), English (fluent)";
-    const result = parseResumeText(text, [], languageLabels);
-    expect(result.matchedTagIds).toEqual([]);
-    expect(result.matchedLanguageIds.sort()).toEqual(["lang-en", "lang-he"]);
-  });
 
   it("does not match a skill label that never appears in the text", () => {
     const text = "No relevant technologies mentioned here.";
@@ -172,25 +161,25 @@ describe("parseResumeText", () => {
 
   it("matches known target-role labels by Hebrew or English label", () => {
     const text = "Experienced Backend Developer looking for new opportunities.";
-    const result = parseResumeText(text, [], [], targetRoleLabels, []);
+    const result = parseResumeText(text, [], targetRoleLabels, []);
     expect(result.matchedTargetRoleIds).toEqual(["role-backend"]);
   });
 
   it("returns an empty array of matched target roles when none appear in the text", () => {
     const text = "A resume with no recognizable target-role labels.";
-    const result = parseResumeText(text, [], [], targetRoleLabels, []);
+    const result = parseResumeText(text, [], targetRoleLabels, []);
     expect(result.matchedTargetRoleIds).toEqual([]);
   });
 
   it("matches at most one region — the first known label found, since region is a single-select field", () => {
     const text = "גר במרכז הארץ, עבד גם בצפון.";
-    const result = parseResumeText(text, [], [], [], regionLabels);
+    const result = parseResumeText(text, [], [], regionLabels);
     expect(result.matchedRegionId).toBe("region-center");
   });
 
   it("returns null for matchedRegionId when no known region label appears in the text", () => {
     const text = "No location mentioned anywhere in this text.";
-    const result = parseResumeText(text, [], [], [], regionLabels);
+    const result = parseResumeText(text, [], [], regionLabels);
     expect(result.matchedRegionId).toBeNull();
   });
 
@@ -226,6 +215,84 @@ describe("parseResumeText", () => {
     expect(result.shortIntroGuess).toBeNull();
   });
 
+  it("drafts a fullNameGuess from an explicit Hebrew label", () => {
+    const text = ["שם: דנה כהן", "Summary"].join("\n");
+    const result = parseResumeText(text, [], []);
+    expect(result.fullNameGuess).toBe("דנה כהן");
+  });
+
+  it("drafts a fullNameGuess from an explicit English label", () => {
+    const text = ["Name: John Smith", "Summary"].join("\n");
+    const result = parseResumeText(text, [], []);
+    expect(result.fullNameGuess).toBe("John Smith");
+  });
+
+  it("falls back to the first line when it plausibly looks like a name", () => {
+    const text = ["Dana Cohen", "Backend Developer", "Acme Corp - Backend Developer\n01/2020 - Present"].join("\n");
+    const result = parseResumeText(text, [], []);
+    expect(result.fullNameGuess).toBe("Dana Cohen");
+  });
+
+  it("returns null for fullNameGuess when no label is found and the first line doesn't look like a name", () => {
+    const text = "Acme Corp - Backend Developer\n01/2020 - Present";
+    const result = parseResumeText(text, [], []);
+    expect(result.fullNameGuess).toBeNull();
+  });
+
+  it("extracts a valid Israeli mobile phone number", () => {
+    const text = "Contact me: 052-1234567 or by email.";
+    const result = parseResumeText(text, [], []);
+    expect(result.phoneGuess).toBe("0521234567");
+  });
+
+  it("extracts a valid Israeli landline phone number", () => {
+    const text = "Office: 02-1234567";
+    const result = parseResumeText(text, [], []);
+    expect(result.phoneGuess).toBe("021234567");
+  });
+
+  it("extracts a valid +972 phone number", () => {
+    const text = "Phone: +972-52-1234567";
+    const result = parseResumeText(text, [], []);
+    expect(result.phoneGuess).toBe("+972521234567");
+  });
+
+  it("returns null for phoneGuess when a digit sequence doesn't match a known Israeli phone shape", () => {
+    const text = "Call 555-123-4567 for a reference.";
+    const result = parseResumeText(text, [], []);
+    expect(result.phoneGuess).toBeNull();
+  });
+
+  it("returns null for phoneGuess when no phone-shaped substring is present", () => {
+    const text = "No contact details here.";
+    const result = parseResumeText(text, [], []);
+    expect(result.phoneGuess).toBeNull();
+  });
+
+  it("extracts and normalizes a LinkedIn URL with a full https scheme", () => {
+    const text = "LinkedIn: https://www.linkedin.com/in/dana-cohen/";
+    const result = parseResumeText(text, [], []);
+    expect(result.linkedInUrlGuess).toBe("https://www.linkedin.com/in/dana-cohen");
+  });
+
+  it("extracts and normalizes a LinkedIn URL with no scheme", () => {
+    const text = "linkedin.com/in/dana-cohen";
+    const result = parseResumeText(text, [], []);
+    expect(result.linkedInUrlGuess).toBe("https://www.linkedin.com/in/dana-cohen");
+  });
+
+  it("extracts and normalizes a LinkedIn URL with a country subdomain", () => {
+    const text = "il.linkedin.com/in/dana-cohen";
+    const result = parseResumeText(text, [], []);
+    expect(result.linkedInUrlGuess).toBe("https://www.linkedin.com/in/dana-cohen");
+  });
+
+  it("returns null for linkedInUrlGuess when no linkedin.com/in/ pattern is present", () => {
+    const text = "Find me on GitHub instead.";
+    const result = parseResumeText(text, [], []);
+    expect(result.linkedInUrlGuess).toBeNull();
+  });
+
   it("is robust to decomposed-form (NFD) Hebrew text when matching labels", () => {
     // A base letter followed by a separate combining diacritic (as some PDF
     // generators emit Hebrew) renders identically to the precomposed form
@@ -238,11 +305,13 @@ describe("parseResumeText", () => {
   it("never crashes on malformed/adversarial input and always returns a well-formed result", () => {
     const inputs = ["", "\n\n\n", "  ", "a".repeat(10_000), "-".repeat(500)];
     for (const input of inputs) {
-      const result = parseResumeText(input, skillLabels, languageLabels, targetRoleLabels, regionLabels);
+      const result = parseResumeText(input, skillLabels, targetRoleLabels, regionLabels);
       expect(Array.isArray(result.positions)).toBe(true);
       expect(Array.isArray(result.matchedTagIds)).toBe(true);
-      expect(Array.isArray(result.matchedLanguageIds)).toBe(true);
       expect(Array.isArray(result.matchedTargetRoleIds)).toBe(true);
+      expect(result.fullNameGuess === null || typeof result.fullNameGuess === "string").toBe(true);
+      expect(result.phoneGuess === null || typeof result.phoneGuess === "string").toBe(true);
+      expect(result.linkedInUrlGuess === null || typeof result.linkedInUrlGuess === "string").toBe(true);
     }
   });
 });

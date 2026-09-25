@@ -33,11 +33,11 @@ export interface ProfileStepOneInitialData {
   regionId: string | null;
   shortIntro: string;
   tagIds: string[];
-  languageIds: string[];
   currentCompany: CompanySelection | null;
   currentStartMonth: string;
   previousPositions: PreviousPosition[];
   gender?: Gender | null;
+  linkedInUrl: string;
 }
 
 export function ProfileStepOneForm({
@@ -46,8 +46,8 @@ export function ProfileStepOneForm({
   regions,
   skills,
   domains,
-  languages,
   initial,
+  aiSummaryGuess = null,
   onSave = saveProfileStepOneAction,
   submitLabel = "המשך להגדרות פרטיות",
 }: {
@@ -56,8 +56,9 @@ export function ProfileStepOneForm({
   regions: Option[];
   skills: Option[];
   domains: Option[];
-  languages: Option[];
   initial?: ProfileStepOneInitialData;
+  /** An AI-composed alternative short-intro sentence (see resumes/parser.ts's aiSummaryGuess) — when present and not already in use, offered as a one-click suggestion next to the short-intro field instead of being applied automatically. */
+  aiSummaryGuess?: string | null;
   /** Defaults to the onboarding action (which redirects onward); pass a settings-page action to stay put instead. */
   onSave?: (input: unknown) => Promise<ActionState>;
   submitLabel?: string;
@@ -68,8 +69,8 @@ export function ProfileStepOneForm({
   const [regionId, setRegionId] = useState<string>(initial?.regionId ?? "");
   const [shortIntro, setShortIntro] = useState(initial?.shortIntro ?? "");
   const [tagIds, setTagIds] = useState<string[]>(initial?.tagIds ?? []);
-  const [languageIds, setLanguageIds] = useState<string[]>(initial?.languageIds ?? []);
   const [gender, setGender] = useState<Gender>(initial?.gender ?? "MALE");
+  const [linkedInUrl, setLinkedInUrl] = useState(initial?.linkedInUrl ?? "");
 
   const [currentCompany, setCurrentCompany] = useState<CompanySelection | null>(initial?.currentCompany ?? null);
   const [currentStartMonth, setCurrentStartMonth] = useState(initial?.currentStartMonth ?? "");
@@ -107,9 +108,9 @@ export function ProfileStepOneForm({
 
     if (roleIds.length === 0) return setError("יש לבחור לפחות תפקיד יעד אחד");
     if (!currentRoleTitle.trim()) return setError("יש להזין תפקיד נוכחי");
-    if (languageIds.length === 0) return setError("יש לבחור לפחות שפה אחת");
     if (!currentCompany) return setError("יש לבחור את החברה הנוכחית שלך מהרשימה, או להוסיף אותה");
     if (!currentStartMonth) return setError("יש להזין תאריך התחלה בתפקיד הנוכחי");
+    if (!linkedInUrl.trim()) return setError("יש להזין קישור לפרופיל LinkedIn");
     for (const p of previousPositions) {
       if (!p.company || !p.title.trim() || !p.startMonth || !p.endMonth) {
         return setError("יש להשלים את כל השדות בתפקידים קודמים, או להסיר שורה לא שלמה");
@@ -143,9 +144,9 @@ export function ProfileStepOneForm({
         regionId: regionId || null,
         shortIntro: shortIntro.trim(),
         tagIds,
-        languageIds,
         positions,
         gender,
+        linkedInUrl: linkedInUrl.trim(),
       });
       if (result && !result.ok) {
         setError(result.error ?? "משהו השתבש. נסו שוב");
@@ -204,6 +205,20 @@ export function ProfileStepOneForm({
             className="w-full rounded-xl border border-border bg-white px-4 py-3"
           />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-ink">קישור לפרופיל LinkedIn</h2>
+        <p className="text-sm text-muted">נחשף אוטומטית לצד הצד השני רק לאחר חיבור פעיל — לא מוצג לפני כן.</p>
+        <input
+          id="linkedInUrl"
+          type="url"
+          value={linkedInUrl}
+          onChange={(e) => setLinkedInUrl(e.target.value)}
+          placeholder="https://www.linkedin.com/in/your-name"
+          className="w-full max-w-md rounded-xl border border-border bg-white px-4 py-3"
+          required
+        />
       </section>
 
       <section className="space-y-3">
@@ -295,8 +310,7 @@ export function ProfileStepOneForm({
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-ink">שפות ומיקום</h2>
-        <TagPicker label="שפות" options={languages} selected={languageIds} onToggle={(id) => toggle(languageIds, id, setLanguageIds)} />
+        <h2 className="text-lg font-semibold text-ink">מיקום</h2>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink" htmlFor="region">
             אזור מגורים כללי
@@ -330,6 +344,19 @@ export function ProfileStepOneForm({
           className="w-full rounded-xl border border-border bg-white px-4 py-3"
         />
         <p className="text-left text-xs text-muted">{shortIntro.length}/400</p>
+        {aiSummaryGuess && aiSummaryGuess !== shortIntro && (
+          <div className="rounded-xl border border-border bg-paper p-3 text-sm">
+            <p className="mb-1 font-medium text-ink">הצעה מה-AI, על סמך קורות החיים:</p>
+            <p className="text-muted">&quot;{aiSummaryGuess}&quot;</p>
+            <button
+              type="button"
+              onClick={() => setShortIntro(aiSummaryGuess)}
+              className="mt-2 text-sm font-medium text-primary hover:text-primary-dark"
+            >
+              שימוש במשפט הזה
+            </button>
+          </div>
+        )}
       </section>
 
       {notice && <p className="rounded-xl bg-mint px-4 py-3 text-sm text-primary-dark">{notice}</p>}
@@ -342,7 +369,7 @@ export function ProfileStepOneForm({
   );
 }
 
-function ChipToggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+export function ChipToggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -358,7 +385,7 @@ function ChipToggle({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-function TagPicker({
+export function TagPicker({
   label,
   options,
   selected,

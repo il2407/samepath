@@ -16,6 +16,8 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
   const [publicationDelay, setPublicationDelay] = useState(14);
   const [changesMessage, setChangesMessage] = useState("");
   const [showChanges, setShowChanges] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [showReject, setShowReject] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function approve() {
@@ -36,7 +38,9 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
   }
   function reject() {
     startTransition(async () => {
-      await rejectContributionAction({ experienceId: item.id });
+      const result = await rejectContributionAction({ experienceId: item.id, notes: rejectNotes.trim() || undefined });
+      if (!result.ok) setError(result.error ?? "משהו השתבש");
+      setShowReject(false);
       router.refresh();
     });
   }
@@ -56,6 +60,14 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
         </span>
       </div>
       <p className="mt-2 text-sm text-ink/80">{item.processDescription}</p>
+
+      {item.questions.length > 0 && (
+        <ol className="mt-3 list-decimal space-y-1.5 rounded-xl bg-paper py-3 pe-3 ps-8 text-sm text-ink">
+          {item.questions.map((text, i) => (
+            <li key={i}>{text}</li>
+          ))}
+        </ol>
+      )}
 
       {(item.contentWarnings.length > 0 || item.likelyDuplicateQuestions > 0) && (
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -101,11 +113,11 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
         </button>
         <button
           type="button"
-          onClick={reject}
+          onClick={() => setShowReject((v) => !v)}
           disabled={pending}
           className="rounded-full border border-border px-4 py-1.5 text-sm hover:border-primary"
         >
-          דחייה
+          פסילה
         </button>
         <button type="button" onClick={remove} disabled={pending} className="rounded-full px-4 py-1.5 text-sm text-danger hover:bg-danger/10">
           הסרה
@@ -128,6 +140,26 @@ export function ModerationQueueCard({ item }: { item: ModerationQueueItem }) {
             className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             שליחת בקשת שינויים
+          </button>
+        </div>
+      )}
+
+      {showReject && (
+        <div className="mt-3 space-y-2 rounded-xl border border-border bg-paper p-3">
+          <textarea
+            value={rejectNotes}
+            onChange={(e) => setRejectNotes(e.target.value)}
+            placeholder="סיבת הפסילה (לא חובה — תישלח לתורם/ת במייל)"
+            rows={2}
+            className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={reject}
+            disabled={pending}
+            className="rounded-full bg-danger px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            אישור פסילה
           </button>
         </div>
       )}

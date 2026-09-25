@@ -151,6 +151,32 @@ describe("moderation -> scheduled publication -> lazy publish", () => {
     expect(await getCreditBalance(author.user.id)).toBe(0);
   });
 
+  it("notifies the author in-app of every moderation decision", async () => {
+    const acme = await createTestCompany("Acme");
+    const author = await createTestUser();
+    const moderator = await createTestUser();
+    const submit = async () => {
+      const id = await saveDraftExperience(author.user.id, baseInput(acme.id));
+      await submitForReview(author.user.id, id, attestation);
+      return id;
+    };
+
+    await approveContribution(moderator.user.id, await submit(), 14);
+    await requestChanges(moderator.user.id, await submit(), "אנא הסירו פרטים מזהים.");
+    await rejectContribution(moderator.user.id, await submit(), "לא ברור מספיק");
+
+    const notifications = await prisma.notification.findMany({
+      where: { userId: author.user.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(notifications.map((n) => n.type)).toEqual([
+      "CONTRIBUTION_APPROVED",
+      "CONTRIBUTION_NEEDS_CHANGES",
+      "CONTRIBUTION_REJECTED",
+    ]);
+    expect(await prisma.notification.count({ where: { userId: moderator.user.id } })).toBe(0);
+  });
+
   it("reverses the credit grant when a published contribution is removed for fraud", async () => {
     const acme = await createTestCompany("Acme");
     const author = await createTestUser();

@@ -2,8 +2,8 @@
 
 A discreet professional community for people navigating similar job
 searches — not an interview-prep platform. SamePath matches people on
-career-search compatibility (field, seniority, timing, availability,
-language) while enforcing hard privacy rules that block same-company,
+career-search compatibility (field, seniority, timing, availability)
+while enforcing hard privacy rules that block same-company,
 blocked-company, and corporate-group matches outright, and reveals
 identity only progressively: nothing before mutual opt-in, and even after
 a match, only what each person's own disclosure preference opted into.
@@ -107,7 +107,7 @@ privacy/score internals are restricted tables, money-as-cents) is in
 | `payments` | `PaymentProvider` interface + `FakePaymentProvider` |
 | `account` | Data export, soft deletion |
 | `admin` | The internal admin/moderation area — all of the above, plus reward-policy and access-product configuration |
-| `reference-data` | Lookup-table reads (fields, roles, bands, languages, regions, tags) |
+| `reference-data` | Lookup-table reads (fields, roles, bands, regions, tags) |
 | `notifications` | `Mailer` interface + console/SMTP adapters |
 | `integrations/jobtracker` | Types-only, unimplemented — see above |
 
@@ -233,7 +233,7 @@ pnpm e2e:ui          # interactive UI mode
 the app running on the **local dev database** (`.env`, already seeded —
 see "Local development setup"), not the vitest suite's throwaway
 `.env.test` database: these specs need the seeded reference data (fields,
-roles, tags, languages, the `admin@example.com` account) to exercise real
+roles, tags, the `admin@example.com` account) to exercise real
 forms, and vitest's per-test `TRUNCATE` reset would pull that data out
 from under a running browser session. Each spec registers its own
 throwaway user with a timestamped email, so runs don't collide with each
@@ -300,7 +300,7 @@ Two stages, always in this order (`src/modules/matching/`):
    engine first. A pair that fails never reaches scoring.
 2. **Weighted compatibility score** — `scoring.ts` (pure,
    `DEFAULT_SCORING_WEIGHTS`) scores field/role overlap, seniority
-   proximity, skills/domain tag overlap, language overlap, and
+   proximity, skills/domain tag overlap, and
    availability overlap into a single transparent score, plus
    `generateSafeReasons()` — human-readable reasons that never leak
    anything privacy-sensitive (never "you're both at Company X," always
@@ -355,7 +355,7 @@ gate (interface + `NoopScanner` placeholder — see
 `docs/security-hardening.md`), text extraction (`pdf-parse` for PDF,
 `mammoth` for `.docx`), and a **pure, DB-free deterministic parser**
 (`deterministic-parser.ts`) that heuristically finds date-ranged
-employment positions and scans for known skill/language labels. None of
+employment positions and scans for known skill labels. None of
 it is applied to the profile automatically — it lands in a
 `ResumeExtractionDraft` that pre-fills the same `ProfileStepOneForm` used
 for manual entry, so every extracted field is reviewed, correctable, or

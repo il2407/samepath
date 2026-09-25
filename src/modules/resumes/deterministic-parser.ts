@@ -27,20 +27,29 @@ export interface ExtractedResumeText {
   positions: CandidatePosition[];
   currentRoleTitleGuess: string | null;
   matchedTagIds: string[];
-  matchedLanguageIds: string[];
-  /** Target-role labels found verbatim in the text (same matching approach as skills/languages — an exact label substring, never a guess). */
+  /** Target-role labels found verbatim in the text (same matching approach as skills — an exact label substring, never a guess). */
   matchedTargetRoleIds: string[];
-  /** At most one — the region field in the profile form is a single-select, so unlike skills/languages/roles there is no "list of matches" to return. Null, never a guessed default, when no known region label appears in the text. */
+  /** At most one — the region field in the profile form is a single-select, so unlike skills/roles there is no "list of matches" to return. Null, never a guessed default, when no known region label appears in the text. */
   matchedRegionId: string | null;
   /** A single-sentence draft for the profile's "short intro" field, heuristically lifted from a detected summary/about section. Null (never a fabricated placeholder) when no such section is found or its body is too sparse to be useful — see extractShortIntroGuess. */
   shortIntroGuess: string | null;
+  /** A single-sentence, freshly *composed* (not extracted verbatim) summary of the candidate, offered as an alternative "short intro" suggestion — unlike shortIntroGuess, this requires actually writing new text, which this no-network heuristic parser cannot do, so it is always null here. Only AiResumeParser (parser.ts) ever populates it. */
+  aiSummaryGuess: string | null;
+  /** A best-effort full-name draft — an explicit "שם:"/"Name:" label, or a first-line fallback that plausibly looks like a name. Null (never a fabricated name) when neither is confidently found — see extractFullNameGuess. */
+  fullNameGuess: string | null;
+  /** A phone number found in the text and validated against Israeli mobile/landline digit patterns, normalized to a leading-0 local form. Null when no candidate substring passes validation — see extractPhoneGuess. */
+  phoneGuess: string | null;
+  /** A LinkedIn profile URL found in the text, normalized to a canonical "https://www.linkedin.com/in/<slug>" form with no trailing slash. Null when no linkedin.com/in/ pattern is found — see extractLinkedInGuess. */
+  linkedInUrlGuess: string | null;
 }
 
 const MAX_POSITIONS = 8;
 const MAX_MATCHED_TAGS = 15;
-const MAX_MATCHED_LANGUAGES = 6;
 const MAX_MATCHED_TARGET_ROLES = 4;
 const MIN_SHORT_INTRO_LENGTH = 15;
+const MAX_NAME_LABEL_SCAN_LINES = 15;
+const MAX_NAME_WORDS = 4;
+const MAX_NAME_LENGTH = 40;
 
 // Textual month names a resume might use instead of a numeric "MM/YYYY" date
 // (e.g. "ינואר 2020" or "January 2020"/"Jan 2020"). Without recognizing
@@ -235,10 +244,86 @@ function extractShortIntroGuess(lines: string[]): string | null {
   return guess || null;
 }
 
+// Loose candidate scan: digits plus common separators/prefix characters,
+// at least 8 digits long once separators are stripped — deliberately wide so
+// the strict validation below (against real Israeli mobile/landline shapes)
+// is what actually decides acceptance, not this scan.
+const PHONE_CANDIDATE_RE = /(?:\+?\d[\d\s\-().]{7,}\d)/g;
+// Mobile: 05X-XXXXXXX (10 digits). Landline: 0X-XXXXXXX (9 digits). Either
+// may use +972 instead of the leading 0.
+const PHONE_VALID_RE = /^(?:0\d{8,9}|\+972\d{8,9})$/;
+
+/**
+ * Scans for a phone-number-shaped substring and validates it against known
+ * Israeli mobile/landline digit-count patterns before accepting it — a
+ * malformed or foreign-looking number is never coerced into a guess, per the
+ * same "null over a wrong-looking confident guess" rule as extractShortIntroGuess.
+ */
+export function extractPhoneGuess(text: string): string | null {
+  const candidates = text.match(PHONE_CANDIDATE_RE) ?? [];
+  for (const candidate of candidates) {
+    const stripped = candidate.replace(/[\s\-().]/g, "");
+    if (PHONE_VALID_RE.test(stripped)) return stripped;
+  }
+  return null;
+}
+
+const LINKEDIN_RE = /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/([a-z0-9\-_%]+)\/?/i;
+
+/**
+ * Finds a linkedin.com/in/<slug> pattern and normalizes it to a canonical
+ * https:// form with no trailing slash. Null when no such pattern is present
+ * — never a guessed or partially-reconstructed URL.
+ */
+export function extractLinkedInGuess(text: string): string | null {
+  const match = text.match(LINKEDIN_RE);
+  if (!match) return null;
+  return `https://www.linkedin.com/in/${match[1]}`;
+}
+
+// Explicit "Name:" style labels, Hebrew and English — checked first since a
+// labeled value is a much stronger signal than the first-line fallback below.
+const NAME_LABEL_RE = /^(?:שם מלא|שם פרטי ומשפחה|שם)\s*[:\-–]\s*(.+)$/i;
+const NAME_LABEL_EN_RE = /^(?:full name|name)\s*[:\-–]\s*(.+)$/i;
+
+// Excludes digits/@ (obviously not a name) and common résumé line-separator
+// punctuation (-–—|:/) — a plain name is very unlikely to contain any of
+// these, while a "Company - Title" or "Section:" line very often does, so
+// this keeps the first-line fallback from misreading one of those as a name.
+const NAME_DISALLOWED_RE = /[\d@\-–—|:/]/;
+
+function looksLikeName(candidate: string): boolean {
+  if (!candidate || candidate.length > MAX_NAME_LENGTH) return false;
+  if (NAME_DISALLOWED_RE.test(candidate)) return false;
+  const words = candidate.trim().split(/\s+/);
+  return words.length >= 2 && words.length <= MAX_NAME_WORDS;
+}
+
+/**
+ * Looks for an explicit "שם:"/"Name:" label within the first few lines of
+ * the resume (a résumé header commonly states the candidate's name this
+ * way); failing that, checks whether the very first non-empty line plausibly
+ * looks like a name (2-4 words, no digits or "@", not too long) — a résumé's
+ * first line is very often the candidate's name, but this is a much weaker
+ * signal than an explicit label, so it's applied narrowly. Returns null
+ * (never a fabricated name) when neither check confidently matches.
+ */
+function extractFullNameGuess(lines: string[]): string | null {
+  const scanLimit = Math.min(lines.length, MAX_NAME_LABEL_SCAN_LINES);
+  for (let i = 0; i < scanLimit; i++) {
+    const match = lines[i].match(NAME_LABEL_RE) ?? lines[i].match(NAME_LABEL_EN_RE);
+    if (match && match[1].trim()) return match[1].trim();
+  }
+
+  const firstLine = lines[0];
+  if (firstLine && looksLikeName(firstLine)) return firstLine;
+
+  return null;
+}
+
 export function parseResumeText(
   text: string,
   knownTags: KnownLabel[],
-  knownLanguages: KnownLabel[],
   knownTargetRoles: KnownLabel[] = [],
   knownRegions: KnownLabel[] = [],
 ): ExtractedResumeText {
@@ -262,9 +347,12 @@ export function parseResumeText(
     positions,
     currentRoleTitleGuess: current?.title || null,
     matchedTagIds: matchLabels(normalized, knownTags, MAX_MATCHED_TAGS),
-    matchedLanguageIds: matchLabels(normalized, knownLanguages, MAX_MATCHED_LANGUAGES),
     matchedTargetRoleIds: matchLabels(normalized, knownTargetRoles, MAX_MATCHED_TARGET_ROLES),
     matchedRegionId: matchFirstLabel(normalized, knownRegions),
     shortIntroGuess: extractShortIntroGuess(lines),
+    aiSummaryGuess: null,
+    fullNameGuess: extractFullNameGuess(lines),
+    phoneGuess: extractPhoneGuess(normalized),
+    linkedInUrlGuess: extractLinkedInGuess(normalized),
   };
 }

@@ -47,7 +47,7 @@ export const contentReportReasonLabels: Record<string, string> = {
 
 export const experienceStatusLabels: Record<string, string> = {
   DRAFT: "טיוטה",
-  PENDING_REVIEW: "ממתין לבדיקה",
+  PENDING_REVIEW: "ממתין לאישור הצוות",
   NEEDS_CHANGES: "נדרשים שינויים",
   APPROVED: "אושר",
   SCHEDULED_FOR_PUBLICATION: "מתוזמן לפרסום",

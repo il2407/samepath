@@ -1,12 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { CompanyPicker, type CompanySelection } from "@/modules/companies/CompanyPicker";
 import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
+import { Avatar } from "@/shared/ui/Avatar";
+import { CvVerifiedBadge } from "@/shared/ui/CvVerifiedBadge";
 import { completePrivacyOnboardingAction } from "@/modules/profiles/actions";
 import { ProfilePhotoUploadCard } from "@/modules/profiles/ProfilePhotoUploadCard";
+import {
+  connectionCadenceLabels,
+  connectionFormatLabels,
+  connectionModeLabels,
+  connectionReasonLabels,
+} from "@/modules/profiles/labels";
+import type { PreMatchCandidateDTO } from "@/modules/profiles/dto";
 
 type BlockReason = "FORMER_EMPLOYER" | "INTERVIEWING" | "CLIENT_OR_VENDOR" | "OTHER";
 
@@ -25,7 +34,6 @@ interface BlockedCompanyRow {
 }
 
 export interface PrivacyStepInitial {
-  employerConfirmed: boolean;
   blockedCompanies: { company: CompanySelection; reason: BlockReason }[];
   fullName: string;
   shareCompanyPreMatch: boolean;
@@ -39,6 +47,8 @@ export function PrivacyStepForm({
   initialSharePhotoPostMatch,
   initial,
   submitLabel,
+  previewCandidate,
+  previewNickname,
 }: {
   currentCompanyName: string | null;
   currentPhotoDataUrl: string | null;
@@ -46,8 +56,11 @@ export function PrivacyStepForm({
   /** When re-editing an already-completed privacy step (?edit=true), pre-fills the form from saved data. */
   initial?: PrivacyStepInitial;
   submitLabel?: string;
+  /** The candidate's own profile, shaped exactly like what a real match suggestion shows — used to render a live "how you'll appear" preview. Null only if the profile row is somehow missing. */
+  previewCandidate: PreMatchCandidateDTO | null;
+  /** A stable, per-user stand-in for the random per-suggestion nickname real viewers would see. */
+  previewNickname: string;
 }) {
-  const [employerConfirmed, setEmployerConfirmed] = useState(initial?.employerConfirmed ?? false);
   const [blocks, setBlocks] = useState<BlockedCompanyRow[]>(
     initial?.blockedCompanies.map((b) => ({ key: crypto.randomUUID(), company: b.company, reason: b.reason, note: "" })) ?? [],
   );
@@ -76,7 +89,6 @@ export function PrivacyStepForm({
     e.preventDefault();
     setError(null);
 
-    if (!employerConfirmed) return setError("יש לאשר את המעסיק הנוכחי כדי להמשיך");
     for (const b of blocks) {
       if (!b.company) return setError("יש לבחור חברה עבור כל שורת חסימה, או להסיר שורה ריקה");
     }
@@ -84,7 +96,6 @@ export function PrivacyStepForm({
 
     startTransition(async () => {
       const result = await completePrivacyOnboardingAction({
-        employerConfirmed,
         additionalBlockedCompanies: blocks.map((b) => ({
           companyId: b.company!.id,
           reason: b.reason,
@@ -102,54 +113,31 @@ export function PrivacyStepForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8" noValidate>
-      <section className="space-y-3 rounded-2xl border border-border bg-mint p-5">
-        <h2 className="font-semibold text-ink">אישור מעסיק נוכחי</h2>
-        {currentCompanyName ? (
-          <p className="text-sm text-ink">
-            החברה הנוכחית שהזנתם: <strong>{currentCompanyName}</strong>
-          </p>
-        ) : (
-          <p className="text-sm text-ink">לא הוזנה חברה נוכחית בשלב הקודם.</p>
-        )}
-        <p className="text-sm text-muted">
-          אישור זה נדרש לפני הפעלת הפרופיל, כדי שנוכל למנוע התאמה עם עמיתים לעבודה. השם אינו מוצג
-          לאף אחד — הוא משמש רק לבדיקת פרטיות פנימית.
-        </p>
-        <label className="flex items-center gap-2 text-sm font-medium text-ink">
-          <input
-            type="checkbox"
-            checked={employerConfirmed}
-            onChange={(e) => setEmployerConfirmed(e.target.checked)}
-            className="size-4"
-          />
-          כן, זהו המעסיק הנוכחי שלי
-        </label>
-        {/* ?edit=true is required, not cosmetic — see OnboardingProfilePage's
-            isReEditing: saveProfileStepOne already moved the profile status
-            off DRAFT, so without this the page's own forward guard would
-            immediately redirect straight back here (a dead-end/redirect
-            loop). See the comment there for the full explanation. */}
-        <Link
-          href="/app/onboarding/profile?edit=true"
-          className="inline-block text-sm text-primary hover:text-primary-dark"
-        >
-          זה לא נכון — חזרה לעריכת הפרופיל
-        </Link>
-      </section>
-
-      {/* The former "block entire corporate group" section was removed here
-          (backlog item 6): that toggle no longer does anything —
-          privacy/engine.ts's corporate-group check was removed, so
-          subsidiaries/parents of a blocked or same company are no longer
-          rejected on that basis alone. Only same-company and the explicit
-          blocks below still apply. */}
+      <Link href="/app/onboarding/profile?edit=true" className="inline-block text-sm text-primary hover:text-primary-dark">
+        חזרה לעריכת הפרופיל המקצועי
+      </Link>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-ink">חברות נוספות לחסימה</h2>
-        <p className="text-sm text-muted">
-          מעסיק לשעבר, חברה שבה אתם בתהליך ריאיון, לקוח, ספק, או כל חברה אחרת שתבחרו — לא תוצגו להם
-          ולא תוצגו בפניהם, בלי שום הסבר גלוי.
-        </p>
+        <h2 className="font-semibold text-ink">חברות שלא יראו אתכם</h2>
+        <p className="text-sm text-muted">מעסיק לשעבר, חברה בתהליך ריאיון, לקוח או ספק — לא תוצגו זה לזה.</p>
+
+        {currentCompanyName ? (
+          <div className="grid gap-3 rounded-2xl border border-border bg-mint p-4 sm:grid-cols-[1fr_auto_auto]">
+            <div>
+              <p className="text-sm font-medium text-ink">{currentCompanyName}</p>
+              <p className="text-xs text-muted">זוהה אוטומטית כמעסיק הנוכחי</p>
+            </div>
+            <span className="self-center rounded-lg bg-white px-3 py-3 text-sm text-muted">חסום תמיד</span>
+            <span className="self-center px-3 py-2 text-sm text-muted" title="מונע התאמה בטעות עם עמיתים לעבודה">
+              לא ניתן להסרה
+            </span>
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted">
+            לא זוהתה חברה נוכחית — אפשר להוסיף כאן.
+          </p>
+        )}
+
         {blocks.map((b) => (
           <div key={b.key} className="grid gap-3 rounded-2xl border border-border p-4 sm:grid-cols-[1fr_auto_auto]">
             <CompanyPicker value={b.company} onChange={(c) => updateBlock(b.key, { company: c })} placeholder="שם החברה" />
@@ -176,33 +164,65 @@ export function PrivacyStepForm({
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">איך תוצגו לפני אישור הדדי</h2>
-        <p className="text-sm text-muted">
-          שם מלא ותמונה לעולם לא מוצגים לפני אישור הדדי. במקומם, המערכת מציגה אתכם עם כינוי ואייקון
-          אקראיים שנוצרים אוטומטית. אי אפשר לבחור אותם, וזה מכוון: כך הזהות שלכם לא נחשפת בטעות.
-          הכינוי משתנה עם כל הצעת התאמה חדשה.
-        </p>
-        <p className="text-sm text-muted">
-          אותו אייקון אנונימי מוצג בכל מצב שבו אין תמונת פרופיל, או שבחרתם שלא לחשוף אותה — גם אחרי
-          אישור הדדי. העלאת תמונה אינה חובה בשום שלב, אך היא יכולה לחזק את תחושת האמון והנוחות של הצד
-          השני כשמתקבלת הצעת ההתאמה, ולתת להיכרות פתיחה בטוחה יותר.
-        </p>
+        <p className="text-sm text-muted">כינוי ואייקון אקראיים בלבד — לא שם, לא תמונה.</p>
         <div className="rounded-xl border border-border bg-paper p-4">
           <ToggleRow label="להציג גם את שם המעסיק לפני אישור הדדי" checked={shareCompanyPreMatch} onChange={setShareCompanyPreMatch} />
-          <p className="mt-1.5 text-xs text-muted">
-            כברירת מחדל שם המעסיק מוצג רק לאחר אישור הדדי. אם תסמנו זאת, הוא יופיע כבר בכרטיס ההצעה —
-            שימושי כדי לסנן מראש חברה שפתאום הבנתם שאתם לא רוצים בה, גם אם לא חסמתם אותה מראש. מכיוון
-            שההתאמה כבר עברה את בדיקת הפרטיות (לא אותה חברה, לא חברה שמישהו מכם חסם), זה לעולם לא יחשוף
-            חברה שכבר נפסלה — אבל עדיין חושף יותר מידע לפני שהצד השני הסכים לכך.
-          </p>
         </div>
+
+        {previewCandidate && (
+          <div>
+            <p className="mb-2 text-xs font-medium text-muted">כך תופיעו בכרטיס הצעת התאמה:</p>
+            <div className="rounded-2xl border border-border bg-white p-6">
+              <div className="flex items-center gap-3">
+                <Avatar seed={previewNickname} />
+                <div>
+                  <p className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+                    {previewNickname}
+                    {previewCandidate.cvVerified && <CvVerifiedBadge />}
+                  </p>
+                  <p className="text-sm text-muted">
+                    {[
+                      shareCompanyPreMatch ? currentCompanyName : null,
+                      previewCandidate.professionalField,
+                      previewCandidate.seniorityBand,
+                      previewCandidate.yearsOfExperience != null ? `${previewCandidate.yearsOfExperience} שנות ניסיון` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+              </div>
+
+              {previewCandidate.targetRoles.length > 0 && (
+                <p className="mt-3 text-sm text-ink">מחפש/ת: {previewCandidate.targetRoles.join(", ")}</p>
+              )}
+
+              {previewCandidate.shortIntro && (
+                <p className="mt-3 text-sm italic text-ink/80">&quot;{previewCandidate.shortIntro}&quot;</p>
+              )}
+
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
+                <Tag label={connectionFormatLabels[previewCandidate.connectionFormat]} />
+                <Tag label={connectionCadenceLabels[previewCandidate.connectionCadence]} />
+                <Tag label={connectionModeLabels[previewCandidate.connectionMode]} />
+                {previewCandidate.reasons.map((r) => (
+                  <Tag key={r} label={connectionReasonLabels[r]} />
+                ))}
+              </div>
+
+              {previewCandidate.availabilitySummary.length > 0 && (
+                <p className="mt-3 text-xs text-muted">זמינות: {previewCandidate.availabilitySummary.join(", ")}</p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">מה נחשף לאחר חיבור פעיל</h2>
         <p className="text-sm text-muted">
-          לאחר שנוצר חיבור אמיתי (שני הצדדים הביעו עניין הדדי, ולשניכם יש כרטיס גישה פעיל), השם
-          המלא, המיקום, כתובת האימייל ומספר הטלפון (אם הוזן) נחשפים אוטומטית לצד השני — אין יותר
-          צורך לסמן כל פרט בנפרד. קישור ל-LinkedIn אינו נחשף בשום שלב.
+          שם מלא, מיקום וקישור LinkedIn נחשפים אוטומטית. אימייל וטלפון אינם נחשפים
+          אוטומטית — אפשר לאפשר זאת בהמשך, בכל שלב שתרצו, מתוך הגדרות הפרטיות.
         </p>
         <ProfilePhotoUploadCard
           currentPhotoDataUrl={currentPhotoDataUrl}
@@ -219,14 +239,8 @@ export function PrivacyStepForm({
             placeholder="שם מלא"
             className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
           />
-          <p className="mt-2 text-xs text-muted">ייחשף אוטומטית ברגע שייווצר חיבור פעיל.</p>
           <div className="mt-3">
-            <ToggleRow label="לחשוף שם פרטי כבר בשלב ההתאמה ההדדית (לפני יצירת החיבור)" checked={shareFullName} onChange={setShareFullName} />
-            <p className="mt-1.5 text-xs text-muted">
-              סימון זה מקדים רק את החשיפה החלקית: אם תסמנו אותו, השם הפרטי בלבד (המילה הראשונה בשם
-              המלא) יוצג כבר ברגע שהצד השני מביע עניין הדדי — עוד לפני שהחיבור נפתח בפועל. השם המלא
-              עצמו ייחשף בכל מקרה ברגע שייווצר חיבור פעיל, גם בלי לסמן כאן.
-            </p>
+            <ToggleRow label="לחשוף שם פרטי כבר בהתאמה הדדית" checked={shareFullName} onChange={setShareFullName} />
           </div>
         </div>
         <div>
@@ -238,7 +252,6 @@ export function PrivacyStepForm({
             dir="ltr"
             className="mt-2 w-full max-w-sm rounded-xl border border-border bg-white px-4 py-3"
           />
-          <p className="mt-1.5 text-xs text-muted">ייחשף אוטומטית רק לאחר יצירת חיבור פעיל. אפשר להשאיר ריק.</p>
         </div>
       </section>
 
@@ -258,4 +271,9 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
       {label}
     </label>
   );
+}
+
+function Tag({ label }: { label?: string }) {
+  if (!label) return null;
+  return <span className={cn("rounded-full bg-paper px-2.5 py-1")}>{label}</span>;
 }

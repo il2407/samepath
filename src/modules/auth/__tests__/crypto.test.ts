@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateToken, hashSecret } from "@/modules/auth/crypto";
+import { generateNumericCode, generateToken, hashSecret } from "@/modules/auth/crypto";
 
 describe("generateToken", () => {
   it("produces distinct, URL-safe, high-entropy tokens", () => {
@@ -8,6 +8,23 @@ describe("generateToken", () => {
     expect(a).not.toBe(b);
     expect(a).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(a.length).toBeGreaterThan(30);
+  });
+});
+
+describe("generateNumericCode", () => {
+  it("produces a 6-digit, zero-padded numeric code by default", () => {
+    const code = generateNumericCode();
+    expect(code).toMatch(/^\d{6}$/);
+  });
+
+  it("supports a custom digit count", () => {
+    const code = generateNumericCode(4);
+    expect(code).toMatch(/^\d{4}$/);
+  });
+
+  it("produces different codes across calls (not a constant)", () => {
+    const codes = new Set(Array.from({ length: 20 }, () => generateNumericCode()));
+    expect(codes.size).toBeGreaterThan(1);
   });
 });
 

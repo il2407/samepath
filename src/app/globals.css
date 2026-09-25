@@ -44,7 +44,8 @@
   --color-danger-dark: #8f3a3a;
 
   --font-body: var(--font-rubik), "Segoe UI", Tahoma, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Consolas, monospace;
+  --font-mono:
+    var(--font-jetbrains-mono), ui-monospace, "SF Mono", Consolas, monospace;
 }
 
 @theme inline {
@@ -74,6 +75,37 @@ body {
   background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-body);
+  overflow-x: hidden;
+}
+
+section[id] {
+  scroll-margin-top: 5rem;
+}
+
+.marketing-path-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-primary) 6%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-primary) 6%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 42px 42px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 16%,
+    black 74%,
+    transparent
+  );
+}
+
+.marketing-shadow {
+  box-shadow: 0 24px 70px -34px rgb(23 33 29 / 0.38);
 }
 
 ::selection {
@@ -107,5 +139,49 @@ body {
 
   .animate-float {
     animation: float 4s ease-in-out infinite;
+  }
+
+  @keyframes float-slow {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(6px, -16px);
+    }
+  }
+
+  .animate-float-slow {
+    animation: float-slow 7s ease-in-out infinite;
+  }
+
+  @keyframes float-slower {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    50% {
+      transform: translate(-8px, -12px);
+    }
+  }
+
+  .animate-float-slower {
+    animation: float-slower 9s ease-in-out infinite 1.5s;
+  }
+
+  @keyframes path-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+      transform: scale(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-path-pulse {
+    animation: path-pulse 3.2s ease-in-out infinite;
   }
 }

@@ -1,3 +1,4 @@
+import { AuthShell } from "@/modules/auth/AuthShell";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Container } from "@/shared/ui/Container";
@@ -12,7 +13,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-mint to-paper py-16">
+    <AuthShell>
       <Container className="max-w-md">
         <div className="rounded-3xl border border-border bg-white p-8 shadow-sm">
           <Link href="/" className="text-lg font-bold text-ink">
@@ -24,7 +25,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               קישור האימות פג תוקף או שכבר נעשה בו שימוש.
             </p>
           )}
-          {params?.googleError && (
+          {params?.googleError === "account_disabled" && (
+            <p className="mt-4 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">
+              החשבון הזה נחסם ואין אליו גישה.
+            </p>
+          )}
+          {params?.googleError && params.googleError !== "account_disabled" && (
             <p className="mt-4 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger-dark">
               ההתחברות עם Google נכשלה. אפשר לנסות שוב, או להתחבר עם אימייל וסיסמה.
             </p>
@@ -42,6 +48,6 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           </LinkButton>
         </div>
       </Container>
-    </main>
+    </AuthShell>
   );
 }

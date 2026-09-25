@@ -15,6 +15,7 @@ import { generateFriendlyNickname } from "@/modules/profiles/nickname";
 import { getAccessStatus } from "@/modules/access-passes/service";
 import { createConnectionFromMatch } from "@/modules/connections/service";
 import { checkAndActivateAccessGate } from "@/modules/access-passes/service";
+import { createNotification, NOTIFICATION_TYPES } from "@/modules/notifications/service";
 import type { MatchDecisionType, MatchStatus } from "@/generated/prisma/client";
 
 const SUGGESTION_EXPIRY_DAYS = 14;
@@ -61,17 +62,23 @@ async function checkAccessGate(userAId: string, userBId: string): Promise<boolea
 }
 
 export async function generateSuggestionsForUser(userId: string): Promise<number> {
+  return (await createSuggestionsForUser(userId)).length;
+}
+
+/** Same as generateSuggestionsForUser, but returns the counterpart user id
+ * of each newly created suggestion, so the caller can notify both sides. */
+async function createSuggestionsForUser(userId: string): Promise<string[]> {
   const subjectProfile = await prisma.professionalProfile.findUnique({ where: { userId } });
-  if (!subjectProfile || subjectProfile.status !== "ACTIVE") return 0;
+  if (!subjectProfile || subjectProfile.status !== "ACTIVE") return [];
 
   const existingCount = await prisma.matchSuggestion.count({
     where: { OR: [{ userAId: userId }, { userBId: userId }], status: { in: NON_TERMINAL_STATUSES } },
   });
   const slotsAvailable = MAX_ACTIVE_SUGGESTIONS - existingCount;
-  if (slotsAvailable <= 0) return 0;
+  if (slotsAvailable <= 0) return [];
 
   const subjectScoring = await loadScoringProfile(userId);
-  if (!subjectScoring) return 0;
+  if (!subjectScoring) return [];
 
   const candidates = await prisma.professionalProfile.findMany({
     where: { status: "ACTIVE", userId: { not: userId } },
@@ -125,7 +132,7 @@ export async function generateSuggestionsForUser(userId: string): Promise<number
             experienceScore: breakdown.experienceScore,
             availabilityScore: breakdown.availabilityScore,
             skillsScore: breakdown.skillsScore,
-            languageScore: breakdown.languageScore,
+            styleScore: breakdown.styleScore,
             totalScore: breakdown.totalScore,
             weightsVersion: WEIGHTS_VERSION,
           },
@@ -134,7 +141,37 @@ export async function generateSuggestionsForUser(userId: string): Promise<number
     });
   }
 
-  return chosen.length;
+  return chosen.map((c) => c.candidateUserId);
+}
+
+/** Minimum gap between two on-visit searches for the same user — absorbs
+ * rapid reloads without skipping a genuine new visit. */
+const VISIT_SEARCH_COOLDOWN_MS = 60 * 1000;
+const lastVisitSearch = new Map<string, number>();
+
+/**
+ * Runs a fresh suggestion search whenever the user enters the platform (the
+ * app layout calls this on every full page load). Any new suggestion gets an
+ * in-app NEW_MATCH notification for both sides — the counterpart has a new
+ * pending suggestion too. Returns how many were created for this user, so
+ * the layout can pop a notice. The cooldown is in-memory, like
+ * shared/rate-limit.ts: fine for the single-instance MVP, and the worst case
+ * without it is only a redundant search (generation itself is idempotent).
+ */
+export async function searchNewSuggestionsOnVisit(userId: string): Promise<number> {
+  const now = Date.now();
+  const last = lastVisitSearch.get(userId);
+  if (last && now - last < VISIT_SEARCH_COOLDOWN_MS) return 0;
+  lastVisitSearch.set(userId, now);
+
+  const counterpartIds = await createSuggestionsForUser(userId);
+  if (counterpartIds.length === 0) return 0;
+
+  await createNotification(userId, NOTIFICATION_TYPES.NEW_MATCH, { newCount: counterpartIds.length });
+  for (const counterpartId of counterpartIds) {
+    await createNotification(counterpartId, NOTIFICATION_TYPES.NEW_MATCH, { newCount: 1 });
+  }
+  return counterpartIds.length;
 }
 
 export interface SuggestionView {
@@ -388,6 +425,10 @@ async function resolveAccessGateAndActivate(
   await prisma.matchSuggestion.update({ where: { id: matchSuggestionId }, data: { status: finalStatus } });
   if (bothHaveAccess) {
     await createConnectionFromMatch(matchSuggestionId, userAId, userBId);
+    await Promise.all([
+      createNotification(userAId, NOTIFICATION_TYPES.CONNECTION_COMPLETED, { matchSuggestionId }),
+      createNotification(userBId, NOTIFICATION_TYPES.CONNECTION_COMPLETED, { matchSuggestionId }),
+    ]);
   }
 
   return finalStatus;

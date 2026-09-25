@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { uniqueTestEmail } from "./helpers/mail";
+import { readVerificationCode, uniqueTestEmail } from "./helpers/mail";
 
 /**
  * The single most important path in the app: a brand-new visitor can
@@ -14,14 +14,32 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
   const companyName = `E2E Test Co ${Date.now()}`;
 
   await page.goto("/register");
+  await page.waitForURL(/\/register\/create/);
   await page.fill("#email", email);
   await page.fill("#password", "e2e-test-password");
   await page.fill("#confirmPassword", "e2e-test-password");
   await page.click('button[type="submit"]');
 
+  // Registration always gates on a 6-digit email OTP (auth/actions.ts,
+  // registerWithPasswordAction) — no dev/test bypass exists, so read the
+  // code the console mailer just wrote to the dev server's own log.
+  await page.waitForURL(/\/verify-email/);
+  const code = await readVerificationCode(email);
+  await page.fill("#code", code);
+  await page.click('button[type="submit"]');
+
+  // The steps explanation comes first, right after the OTP.
+  await page.waitForURL(/\/app\/onboarding\/welcome/);
+  await page.getByRole("link", { name: "בואו נתחיל" }).click();
   await page.waitForURL(/\/app\/onboarding\/profile/);
 
   // --- Step 1: profile ---
+  // The profile step opens on an upload-or-manual choice screen
+  // (ManualEntryToggle.tsx) — the manual form is hidden until this button
+  // reveals it, so this test (the non-resume path) must click through it
+  // first; see resume-onboarding.spec.ts for the upload path.
+  await page.getByRole("button", { name: "מילוי ידני במקום" }).click();
+
   const roleChip = page.getByText("תפקיד/י יעד", { exact: false }).locator("..").getByRole("button").first();
   await roleChip.click();
 
@@ -34,8 +52,7 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
 
   await page.fill('input[aria-label="תאריך תחילת העבודה"]', "2022-01");
 
-  const languageChip = page.getByText("שפות", { exact: true }).locator("..").getByRole("button").first();
-  await languageChip.click();
+  await page.fill("#linkedInUrl", "https://www.linkedin.com/in/e2e-test");
 
   await page.getByRole("button", { name: "המשך להגדרות פרטיות" }).click();
 
@@ -50,28 +67,40 @@ test("register, complete manual onboarding, and land on the app", async ({ page 
   // AGENTS.md / the WS1 backlog item on this). Clicking it must land back
   // on step 1 with previously-entered values pre-filled, not loop back to
   // this page.
-  await page.getByRole("link", { name: "זה לא נכון — חזרה לעריכת הפרופיל" }).click();
+  await page.getByRole("link", { name: "חזרה לעריכת הפרופיל המקצועי" }).click();
   await page.waitForURL(/\/app\/onboarding\/profile\?edit=true/);
   await expect(page.locator("#currentRoleTitle")).toHaveValue("מהנדס/ת Backend");
   await expect(page.getByPlaceholder("שם החברה הנוכחית")).toHaveValue(companyName);
 
   // Continuing forward again from the re-edit must not lose or duplicate
-  // data, and must not silently re-trigger unrelated side effects (the
-  // employer didn't change, so re-confirmation stays required exactly once,
-  // same as the first time through).
+  // data, and must not silently re-trigger unrelated side effects.
   await page.getByRole("button", { name: "שמירה והמשך" }).click();
   await page.waitForURL(/\/app\/onboarding\/privacy/);
   await expect(page.getByText(companyName)).toBeVisible();
 
-  await page.getByRole("checkbox", { name: "כן, זהו המעסיק הנוכחי שלי" }).check();
-
+  // The current employer is now auto-detected and always blocked
+  // (PrivacyStepForm.tsx) — there's no separate confirmation checkbox to
+  // check anymore, so the flow goes straight to the next step.
   await page.getByRole("button", { name: "המשך להעדפות חיבור" }).click();
 
   // --- Step 3: connection preferences ---
   await page.waitForURL(/\/app\/onboarding\/preferences/);
-  await page.getByRole("button", { name: "הפעלת הפרופיל" }).click();
+  await page.getByRole("button", { name: "המשך לסקירה" }).click();
+
+  // --- Step 4: review before final activation ---
+  // A review/summary step (overview/page.tsx) was inserted between
+  // connection preferences and activation — it recaps every prior step and
+  // only then exposes the real "activate profile" control.
+  await page.waitForURL(/\/app\/onboarding\/overview/);
+  // The company name legitimately appears twice here (the "professional
+  // profile" recap and the "current employer" privacy recap), so this needs
+  // .first() to avoid a strict-mode violation.
+  await expect(page.getByText(companyName).first()).toBeVisible();
+  await page.getByRole("button", { name: "אישור והפעלת הפרופיל" }).click();
 
   // --- Landed on the real app ---
-  await page.waitForURL(/\/app$/);
-  await expect(page).toHaveURL(/\/app$/);
+  // Activation now redirects with a welcome query string
+  // (?welcome=1&matches=N), not a bare /app.
+  await page.waitForURL(/\/app(\?|$)/);
+  await expect(page).toHaveURL(/\/app(\?|$)/);
 });

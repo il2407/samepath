@@ -5,6 +5,10 @@ import { getOnboardingStep, getPrivacySettings } from "@/modules/profiles/servic
 import { prisma } from "@/shared/db";
 import { PrivacyStepForm, type PrivacyStepInitial } from "@/modules/profiles/PrivacyStepForm";
 import { getOwnProfilePhotoDataUrl } from "@/modules/profiles/photo";
+import { loadRawProfileForDto } from "@/modules/profiles/dto-loader";
+import { toPreMatchDTO } from "@/modules/profiles/dto";
+import { generateFriendlyNickname } from "@/modules/profiles/nickname";
+import { getLatestResumeDraftData } from "@/modules/resumes/service";
 
 export const metadata: Metadata = { title: "הגדרות פרטיות — SamePath" };
 
@@ -28,13 +32,20 @@ export default async function OnboardingPrivacyPage({ searchParams }: PageProps<
 
   const photoDataUrl = await getOwnProfilePhotoDataUrl(user.id);
 
+  // Company visibility is deliberately ignored here (toPreMatchDTO's second
+  // argument) — the form shows/hides the employer name itself based on the
+  // live shareCompanyPreMatch toggle, so the DTO's own gating would just be
+  // redundant with what the client already does.
+  const rawProfile = await loadRawProfileForDto(user.id);
+  const previewCandidate = rawProfile ? toPreMatchDTO(rawProfile, false) : null;
+  const previewNickname = generateFriendlyNickname(`preview:${user.id}`);
+
   if (isReEditing) {
     const settings = await getPrivacySettings(user.id);
     if (!settings) redirect("/app/onboarding/privacy");
     const { profile, blockedCompanies } = settings;
 
     const initial: PrivacyStepInitial = {
-      employerConfirmed: true,
       blockedCompanies: blockedCompanies
         .filter((b) => b.company)
         .map((b) => ({ company: b.company!, reason: b.reason })),
@@ -55,6 +66,8 @@ export default async function OnboardingPrivacyPage({ searchParams }: PageProps<
             initialSharePhotoPostMatch={profile?.disclosurePreference?.sharePhotoPostMatch ?? false}
             initial={initial}
             submitLabel="שמירה והמשך"
+            previewCandidate={previewCandidate}
+            previewNickname={previewNickname}
           />
         </div>
       </div>
@@ -66,15 +79,34 @@ export default async function OnboardingPrivacyPage({ searchParams }: PageProps<
     include: { currentCompany: true, disclosurePreference: true },
   });
 
+  // The privacy step hasn't been filled in yet at this point (that's what
+  // disclosurePreference being unset means here), so pre-fill its name /
+  // phone fields from the resume's best-effort guesses, if a resume was
+  // uploaded earlier in onboarding — the user still reviews and can edit or
+  // clear every field before it's saved.
+  const resumeDraft = await getLatestResumeDraftData(user.id);
+  const initial: PrivacyStepInitial | undefined = resumeDraft
+    ? {
+        blockedCompanies: [],
+        fullName: resumeDraft.fullNameGuess ?? "",
+        shareCompanyPreMatch: false,
+        shareFullNamePostMatch: false,
+        phoneNumber: resumeDraft.phoneGuess ?? "",
+      }
+    : undefined;
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-ink">הגדרות פרטיות</h1>
-      <p className="mt-2 text-muted">שלב חובה לפני הפעלת הפרופיל. כל שדה מוסבר בעברית פשוטה.</p>
+      <p className="mt-2 text-muted">ניתן לשינוי בכל שלב, גם אחרי ההרשמה.</p>
       <div className="mt-8">
         <PrivacyStepForm
           currentCompanyName={profile?.currentCompany?.canonicalName ?? null}
           currentPhotoDataUrl={photoDataUrl}
           initialSharePhotoPostMatch={profile?.disclosurePreference?.sharePhotoPostMatch ?? false}
+          initial={initial}
+          previewCandidate={previewCandidate}
+          previewNickname={previewNickname}
         />
       </div>
     </div>

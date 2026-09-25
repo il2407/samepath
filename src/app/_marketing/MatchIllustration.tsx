@@ -1,137 +1,108 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
+import { useState, type PointerEvent } from "react";
+import styles from "./match-illustration.module.css";
 
 const profiles = [
-  {
-    label: "הפרופיל שלכם",
-    role: "Software Engineer",
-    experience: "3–5 שנות ניסיון",
-    tags: ["React", "Node.js", "TypeScript", "PostgreSQL"],
-    practicing: "ריאיון טכני ו־System Design",
-    tilt: -3,
-  },
-  {
-    role: "Software Engineer",
-    experience: "4–6 שנות ניסיון",
-    tags: ["React", "Node.js", "TypeScript", "SaaS"],
-    practicing: "ריאיון טכני והצגת פרויקטים",
-    tilt: 2.5,
-  },
+  { label: "הפרופיל שלכם", number: "01", experience: "3 שנות ניסיון", tags: ["React", "TypeScript"], tone: "self" },
+  { label: "במסלול שלכם", number: "02", experience: "4 שנות ניסיון", tags: ["React", "Node.js"], tone: "partner" },
 ];
 
-/** Decorative illustration: a pair of gently tilted, hoverable profile cards
- * "connected" by a floating match badge. Purely visual — screen readers get
- * one summary via the wrapping role="img" instead of walking each node. */
+const reasons = [
+  { title: "תחום וניסיון דומים", detail: "פיתוח תוכנה · 3–4 שנות ניסיון" },
+  { title: "אותה מטרת תרגול", detail: "ריאיון טכני ו־System Design" },
+  { title: "זמן משותף להיפגש", detail: "שניכם פנויים בשעות הערב" },
+];
+
+function tiltCard(event: PointerEvent<HTMLElement>) {
+  if (event.pointerType !== "mouse") return;
+  const card = event.currentTarget;
+  const bounds = card.getBoundingClientRect();
+  const x = Math.max(-0.5, Math.min(0.5, (event.clientX - bounds.left) / bounds.width - 0.5));
+  const y = Math.max(-0.5, Math.min(0.5, (event.clientY - bounds.top) / bounds.height - 0.5));
+  card.style.setProperty("--tilt-x", `${-y * 10}deg`);
+  card.style.setProperty("--tilt-y", `${x * 12}deg`);
+}
+
+function resetCard(event: PointerEvent<HTMLElement>) {
+  event.currentTarget.style.removeProperty("--tilt-x");
+  event.currentTarget.style.removeProperty("--tilt-y");
+}
+
 export function MatchIllustration() {
-  const reduceMotion = useReducedMotion();
+  const [replay, setReplay] = useState(0);
 
   return (
-    <div
-      role="img"
-      aria-label="המחשה של הצעת התאמה: הפרופיל שלכם לצד פרופיל אנונימי של מפתח Full Stack ברמת ניסיון דומה, המעוניין לתרגל תחומים דומים"
-      className="relative mx-auto w-full max-w-md"
-    >
-      <div className="relative" aria-hidden>
-        <motion.div
-          className="group relative z-10"
-          animate={{ rotate: reduceMotion ? 0 : profiles[0].tilt }}
-          whileHover={reduceMotion ? undefined : { rotate: 0, scale: 1.03, y: -6 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-        >
-          <ProfileCard {...profiles[0]} />
-        </motion.div>
-
-        <div className="relative z-20 -my-4 flex justify-center">
-          <span className="animate-float inline-flex items-center gap-1.5 rounded-sm border border-primary/20 bg-mint px-3 py-1.5 font-mono text-xs font-semibold text-primary-dark">
-            <LinkIcon />
-            87% התאמה
-          </span>
+    <section className={styles.match} aria-label="כך נראית התאמה לדוגמה">
+      <div className={styles.caption}>
+        <span>שני אנשים. הצעד הבא, ביחד.</span>
+        <span className={styles.example}>התאמה לדוגמה</span>
+      </div>
+      <div key={replay}>
+        <div className={styles.stage}>
+          <div className={styles.orbit} aria-hidden="true" />
+          <svg className={styles.path} viewBox="0 0 440 360" fill="none" aria-hidden="true">
+            <path d="M310 100 C440 170 65 150 140 275" pathLength="1" />
+          </svg>
+          {profiles.map((profile) => (
+            <article key={profile.number} className={`${styles.card} ${styles[profile.tone]}`} aria-label={profile.label}
+              onPointerMove={tiltCard}
+              onPointerLeave={resetCard}
+              onPointerCancel={resetCard}
+            >
+              <div className={styles.cardTop}>
+                <span>{profile.label}</span>
+                <span className={styles.number}>{profile.number}</span>
+              </div>
+              <div className={styles.identity}>
+                <div className={styles.avatar} aria-hidden="true">
+                  <svg viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="14" r="7" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M7 35c0-8 5-12 13-12s13 4 13 12" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 dir="ltr">Software Engineer</h3>
+                  <p>{profile.experience}</p>
+                </div>
+              </div>
+              <div className={styles.tags}>
+                {profile.tags.map((tag) => <span key={tag} dir="ltr">{tag}</span>)}
+                <span>תרגול ריאיון טכני</span>
+              </div>
+              <div className={styles.cardFooter}><span aria-hidden="true">◷</span> פנויים בערב <span>·</span> פרופיל אנונימי</div>
+            </article>
+          ))}
+          <div className={styles.connection}>
+            <svg viewBox="0 0 28 20" fill="none" aria-hidden="true">
+              <rect x="1" y="4" width="17" height="12" rx="6" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="10" y="4" width="17" height="12" rx="6" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+            <span>יש לכם בסיס לחיבור</span>
+          </div>
+          <span className={styles.marginNote} aria-hidden="true">נפגשים באותו מסלול ↗</span>
         </div>
-
-        <motion.div
-          className="group relative z-0"
-          animate={{ rotate: reduceMotion ? 0 : profiles[1].tilt }}
-          whileHover={reduceMotion ? undefined : { rotate: 0, scale: 1.03, y: -6 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-        >
-          <ProfileCard {...profiles[1]} />
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
-function ProfileCard({
-  label,
-  role,
-  experience,
-  tags,
-  practicing,
-}: {
-  label?: string;
-  role: string;
-  experience: string;
-  tags: string[];
-  practicing: string;
-}) {
-  return (
-    <div className="relative overflow-hidden rounded-sm border border-ink/15 bg-white p-5 shadow-[0_16px_40px_-28px_rgba(21,19,15,0.5)] transition-shadow duration-300 group-hover:shadow-[0_24px_48px_-24px_rgba(21,19,15,0.55)]">
-      {label ? (
-        <span className="mb-3 inline-flex items-center border-b border-primary pb-0.5 text-[11px] font-bold text-primary">
-          {label}
-        </span>
-      ) : null}
-      <div className="flex items-center gap-3">
-        <AnonymousAvatar />
-        <div className="min-w-0">
-          <p className="truncate font-bold text-ink">{role}</p>
-          <p className="text-sm text-muted">{experience}</p>
+        <div className={styles.reasons}>
+          <div className={styles.reasonHeading}>
+            <h3>למה ההתאמה מוצלחת?</h3>
+            <span aria-hidden="true">↙</span>
+          </div>
+          <ul>
+            {reasons.map((reason) => (
+              <li key={reason.title}>
+                <span className={styles.check} aria-hidden="true">✓</span>
+                <div><strong>{reason.title}</strong><p>{reason.detail}</p></div>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className="rounded-sm border border-primary/15 bg-mint/60 px-2.5 py-1 font-mono text-[11px] font-medium text-ink/80"
-          >
-            {tag}
-          </span>
-        ))}
+      <div className={styles.bottom}>
+        <p>פרטים מזהים נחשפים רק כשיש עניין הדדי.</p>
+        <button type="button" onClick={() => setReplay((value) => value + 1)} aria-label="הצגת אנימציית ההתאמה שוב">
+          <span aria-hidden="true">↻</span> שוב את החיבור
+        </button>
       </div>
-      <p className="mt-3 text-xs text-muted">
-        <span className="font-medium text-ink/70">רוצה לתרגל: </span>
-        {practicing}
-      </p>
-    </div>
-  );
-}
-
-function AnonymousAvatar() {
-  return (
-    <div className="relative shrink-0">
-      <div className="flex size-11 items-center justify-center rounded-sm bg-ink/5">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-ink/40">
-          <circle cx="12" cy="8" r="4" fill="currentColor" />
-          <path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" fill="currentColor" />
-        </svg>
-      </div>
-      <span className="absolute -bottom-0.5 -end-0.5 flex size-3.5 items-center justify-center rounded-full bg-white">
-        {/* Tailwind's animate-pulse isn't reduced-motion-aware by default (unlike
-            the .animate-float keyframe in globals.css, which is scoped inside a
-            prefers-reduced-motion media query) — motion-reduce:animate-none closes
-            that gap for this continuously-looping decorative indicator. */}
-        <span className="size-2 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-      </span>
-    </div>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0">
-      <circle cx="6" cy="8" r="4.2" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="10" cy="8" r="4.2" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
+    </section>
   );
 }

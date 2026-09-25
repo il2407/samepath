@@ -27,14 +27,13 @@ async function seedRefs() {
     ],
   });
   const skill = await prisma.tag.create({ data: { kind: "SKILL", slug: "typescript", labelHe: "x", labelEn: "TypeScript" } });
-  const language = await prisma.language.create({ data: { code: "he", labelHe: "עברית", labelEn: "Hebrew" } });
   const region = await prisma.region.create({ data: { code: "il-center", labelHe: "מרכז", labelEn: "Center", kind: "BROAD_AREA" } });
-  return { field, role, skill, language, region };
+  return { field, role, skill, region };
 }
 
 describe("saveProfileStepOne", () => {
   it("computes experience months/band and sets the current company from the current position", async () => {
-    const { field, role, skill, language, region } = await seedRefs();
+    const { field, role, skill, region } = await seedRefs();
     const company = await prisma.company.create({ data: { canonicalName: "Acme" } });
     const user = await prisma.user.create({ data: { email: "a@example.com" } });
 
@@ -48,7 +47,7 @@ describe("saveProfileStepOne", () => {
       regionId: region.id,
       shortIntro: "Building things.",
       tagIds: [skill.id],
-      languageIds: [language.id],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [
         {
           companyId: company.id,
@@ -63,7 +62,7 @@ describe("saveProfileStepOne", () => {
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
       where: { userId: user.id },
-      include: { targetRoles: true, tags: true, languages: true, seniorityBand: true },
+      include: { targetRoles: true, tags: true, seniorityBand: true },
     });
     expect(profile.status).toBe("PENDING_PRIVACY");
     expect(profile.currentCompanyId).toBe(company.id);
@@ -72,7 +71,6 @@ describe("saveProfileStepOne", () => {
     expect(profile.seniorityBand?.code).toBe("mid");
     expect(profile.targetRoles).toHaveLength(1);
     expect(profile.tags).toHaveLength(1);
-    expect(profile.languages).toHaveLength(1);
   });
 
   it("resets currentCompanyConfirmedAt when the employer is changed on a later edit", async () => {
@@ -88,7 +86,7 @@ describe("saveProfileStepOne", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
     };
 
     await saveProfileStepOne(user.id, {
@@ -123,7 +121,7 @@ describe("saveProfileStepOne", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [
         { companyId: company.id, companyRaw: "Acme", title: "Engineer", startDate: new Date("2021-01-01"), endDate: null, isCurrent: true },
       ],
@@ -144,60 +142,55 @@ describe("saveProfileStepOne", () => {
     expect(profile.shortIntro).toBe("מפתח/ת עם דגש על מערכות בזמן אמת.");
   });
 
-  it("replaces target roles/tags/languages/positions on re-save rather than accumulating duplicates", async () => {
-    const { field, role, skill, language, region } = await seedRefs();
+  it("replaces target roles/tags/positions on re-save rather than accumulating duplicates", async () => {
+    const { field, role, skill, region } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "c@example.com" } });
     const base = {
       professionalFieldId: field.id,
       currentRoleTitle: "Engineer",
       regionId: region.id,
       shortIntro: "x",
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [] as never[],
     };
 
-    await saveProfileStepOne(user.id, { ...base, targetRoleIds: [role.id], tagIds: [skill.id], languageIds: [language.id] });
-    await saveProfileStepOne(user.id, { ...base, targetRoleIds: [role.id], tagIds: [skill.id], languageIds: [language.id] });
+    await saveProfileStepOne(user.id, { ...base, targetRoleIds: [role.id], tagIds: [skill.id] });
+    await saveProfileStepOne(user.id, { ...base, targetRoleIds: [role.id], tagIds: [skill.id] });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
       where: { userId: user.id },
-      include: { targetRoles: true, tags: true, languages: true },
+      include: { targetRoles: true, tags: true },
     });
     expect(profile.targetRoles).toHaveLength(1);
     expect(profile.tags).toHaveLength(1);
-    expect(profile.languages).toHaveLength(1);
+  });
+
+  it("dedupes a repeated id within a single call instead of violating the per-profile unique constraint (e.g. the AI resume parser matching the same tag from two resume sections)", async () => {
+    const { field, role, skill, region } = await seedRefs();
+    const user = await prisma.user.create({ data: { email: "d@example.com" } });
+
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id, role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [skill.id, skill.id],
+      linkedInUrl: "https://linkedin.com/in/test",
+      positions: [],
+    });
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({
+      where: { userId: user.id },
+      include: { targetRoles: true, tags: true },
+    });
+    expect(profile.targetRoles).toHaveLength(1);
+    expect(profile.tags).toHaveLength(1);
   });
 });
 
 describe("completePrivacyOnboarding", () => {
-  it("refuses to proceed without explicit employer confirmation", async () => {
-    const { field, role, region } = await seedRefs();
-    const user = await prisma.user.create({ data: { email: "d@example.com" } });
-    await saveProfileStepOne(user.id, {
-      professionalFieldId: field.id,
-      targetRoleIds: [role.id],
-      currentRoleTitle: "Engineer",
-      regionId: region.id,
-      shortIntro: "x",
-      tagIds: [],
-      languageIds: [],
-      positions: [],
-    });
-
-    await expect(
-      completePrivacyOnboarding(user.id, {
-        employerConfirmed: false,
-        additionalBlockedCompanies: [],
-        shareCompanyPreMatch: false,
-        shareFullNamePostMatch: false,
-        sharePhotoPostMatch: false,
-      }),
-    ).rejects.toThrow();
-
-    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
-    expect(profile.currentCompanyConfirmedAt).toBeNull();
-  });
-
-  it("confirms the employer, stores blocks, disclosure prefs, and audit confirmations", async () => {
+  it("confirms the employer implicitly, stores blocks, disclosure prefs, and audit confirmations", async () => {
     const { field, role, region } = await seedRefs();
     const currentCo = await prisma.company.create({ data: { canonicalName: "Acme" } });
     const formerCo = await prisma.company.create({ data: { canonicalName: "OldCo" } });
@@ -210,18 +203,19 @@ describe("completePrivacyOnboarding", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [
         { companyId: currentCo.id, companyRaw: "Acme", title: "Engineer", startDate: new Date("2021-01-01"), endDate: null, isCurrent: true },
       ],
     });
 
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [{ companyId: formerCo.id, reason: "FORMER_EMPLOYER" }],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
@@ -255,7 +249,7 @@ describe("completePrivacyOnboarding", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [
         { companyId: company.id, companyRaw: "Acme", title: "Engineer", startDate: new Date("2021-01-01"), endDate: null, isCurrent: true },
       ],
@@ -266,11 +260,12 @@ describe("completePrivacyOnboarding", () => {
     await prisma.professionalProfile.update({ where: { userId: user.id }, data: { resumeRetentionPreference: "KEEP" } });
 
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
@@ -294,15 +289,16 @@ describe("updatePrivacySettings", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [],
     });
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
     await prisma.professionalProfile.update({ where: { userId: user.id }, data: { status: "ACTIVE" } });
 
@@ -311,7 +307,8 @@ describe("updatePrivacySettings", () => {
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      resumeRetentionPreference: "KEEP",
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
 
     const profile = await prisma.professionalProfile.findUniqueOrThrow({
@@ -319,7 +316,6 @@ describe("updatePrivacySettings", () => {
       include: { privacyPreference: true },
     });
     expect(profile.status).toBe("ACTIVE"); // unchanged
-    expect(profile.resumeRetentionPreference).toBe("KEEP");
     // blockEntireCorporateGroup is no longer accepted as settings input
     // (backlog item 6) — it stays at its onboarding-time value (the schema
     // default, true) regardless of what updatePrivacySettings is called
@@ -333,7 +329,7 @@ describe("updatePrivacySettings", () => {
     expect(confirmations).toHaveLength(2); // still just the two from onboarding, no new ones
   });
 
-  it("never writes LinkedIn or the retired per-field post-match toggles, even though the columns still exist (backlog items 6/10/11)", async () => {
+  it("writes the contact-info toggles (live fields) but still never writes sharePreciseLocationPostMatch, the one genuinely retired toggle (backlog items 6/10/11, revised for contact-info reveal)", async () => {
     const { field, role, region } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "legacy-toggles@example.com" } });
     await saveProfileStepOne(user.id, {
@@ -343,48 +339,101 @@ describe("updatePrivacySettings", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [],
     });
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
 
-    // Simulate a pre-WS3 row that still has the retired toggles turned on
+    // Simulate a pre-WS3 row that still has the retired toggle turned on
     // (e.g. an account created before this backlog item shipped).
     const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
     await prisma.identityDisclosurePreference.update({
       where: { profileId: profile.id },
-      data: {
-        shareLinkedInPostMatch: true,
-        linkedInUrl: "https://linkedin.com/in/legacy",
-        sharePreciseLocationPostMatch: true,
-        shareEmailPostMatch: true,
-        sharePhonePostMatch: true,
-      },
+      data: { sharePreciseLocationPostMatch: true },
     });
 
     // Neither completePrivacyOnboarding nor updatePrivacySettings has a
-    // field for any of these anymore — calling them must not reset (or
-    // otherwise touch) the legacy values one way or the other.
+    // field for sharePreciseLocationPostMatch anymore — calling them must
+    // not reset (or otherwise touch) that legacy value one way or the
+    // other. The two contact-info toggles, unlike that one, are live fields
+    // (standing, explicit opt-ins) — their new values should actually
+    // persist, written straight from this call's input.
     await updatePrivacySettings(user.id, {
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
-      resumeRetentionPreference: "KEEP",
+      shareEmailPostMatch: true,
+      sharePhonePostMatch: true,
     });
 
     const disclosure = await prisma.identityDisclosurePreference.findUniqueOrThrow({ where: { profileId: profile.id } });
-    expect(disclosure.shareLinkedInPostMatch).toBe(true);
-    expect(disclosure.linkedInUrl).toBe("https://linkedin.com/in/legacy");
-    expect(disclosure.sharePreciseLocationPostMatch).toBe(true);
     expect(disclosure.shareEmailPostMatch).toBe(true);
     expect(disclosure.sharePhonePostMatch).toBe(true);
+    expect(disclosure.sharePreciseLocationPostMatch).toBe(true); // untouched legacy value — no input field for it
+    // LinkedIn moved to the profile step (saveProfileStepOne) and is no
+    // longer part of updatePrivacySettings at all — it's unaffected here.
+    expect(disclosure.linkedInUrl).toBe("https://linkedin.com/in/test");
+    expect(disclosure.shareLinkedInPostMatch).toBe(true);
+  });
+
+  it("does NOT accept linkedInUrl or shareLinkedInPostMatch — LinkedIn is exclusively written by saveProfileStepOne now", async () => {
+    const { field, role, region } = await seedRefs();
+    const user = await prisma.user.create({ data: { email: "linkedin-owned-by-profile-step@example.com" } });
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      linkedInUrl: "https://linkedin.com/in/original",
+      positions: [],
+    });
+    await completePrivacyOnboarding(user.id, {
+      additionalBlockedCompanies: [],
+      shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
+    });
+
+    await updatePrivacySettings(user.id, {
+      additionalBlockedCompanies: [],
+      shareCompanyPreMatch: false,
+      shareFullNamePostMatch: false,
+      sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
+    });
+
+    const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId: user.id } });
+    let disclosure = await prisma.identityDisclosurePreference.findUniqueOrThrow({ where: { profileId: profile.id } });
+    expect(disclosure.linkedInUrl).toBe("https://linkedin.com/in/original");
+
+    // Re-saving step one with a new LinkedIn URL is how it actually changes.
+    await saveProfileStepOne(user.id, {
+      professionalFieldId: field.id,
+      targetRoleIds: [role.id],
+      currentRoleTitle: "Engineer",
+      regionId: region.id,
+      shortIntro: "x",
+      tagIds: [],
+      linkedInUrl: "https://linkedin.com/in/updated",
+      positions: [],
+    });
+
+    disclosure = await prisma.identityDisclosurePreference.findUniqueOrThrow({ where: { profileId: profile.id } });
+    expect(disclosure.linkedInUrl).toBe("https://linkedin.com/in/updated");
+    expect(disclosure.shareLinkedInPostMatch).toBe(true);
   });
 });
 
@@ -399,7 +448,7 @@ describe("completeConnectionPreferences", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [],
     });
 
@@ -410,7 +459,6 @@ describe("completeConnectionPreferences", () => {
         format: "BOTH",
         cadence: "BOTH",
         mode: "BOTH",
-        languageId: null,
         timezone: "Asia/Jerusalem",
         reasons: ["SHARE_JOB_SEARCH"],
         availability: [],
@@ -419,7 +467,7 @@ describe("completeConnectionPreferences", () => {
   });
 
   it("saves the connection preferences but leaves activation to activateProfile", async () => {
-    const { field, role, region, language } = await seedRefs();
+    const { field, role, region } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "g@example.com" } });
     await saveProfileStepOne(user.id, {
       professionalFieldId: field.id,
@@ -428,15 +476,16 @@ describe("completeConnectionPreferences", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [],
     });
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
 
     expect(await getOnboardingStep(user.id)).toBe("preferences");
@@ -447,7 +496,6 @@ describe("completeConnectionPreferences", () => {
       format: "BOTH",
       cadence: "BOTH",
       mode: "ONLINE",
-      languageId: language.id,
       timezone: "Asia/Jerusalem",
       reasons: ["SHARE_JOB_SEARCH", "ACCOUNTABILITY"],
       availability: [{ dayOfWeek: 2, startMinute: 600, endMinute: 720 }],
@@ -472,7 +520,7 @@ describe("completeConnectionPreferences", () => {
 
 describe("getOnboardingStep", () => {
   it("walks profile -> privacy -> preferences -> overview -> done as steps complete", async () => {
-    const { field, role, region, language } = await seedRefs();
+    const { field, role, region } = await seedRefs();
     const user = await prisma.user.create({ data: { email: "h@example.com" } });
 
     expect(await getOnboardingStep(user.id)).toBe("profile");
@@ -484,17 +532,18 @@ describe("getOnboardingStep", () => {
       regionId: region.id,
       shortIntro: "x",
       tagIds: [],
-      languageIds: [],
+      linkedInUrl: "https://linkedin.com/in/test",
       positions: [],
     });
     expect(await getOnboardingStep(user.id)).toBe("privacy");
 
     await completePrivacyOnboarding(user.id, {
-      employerConfirmed: true,
       additionalBlockedCompanies: [],
       shareCompanyPreMatch: false,
       shareFullNamePostMatch: false,
       sharePhotoPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     });
     expect(await getOnboardingStep(user.id)).toBe("preferences");
 
@@ -504,7 +553,6 @@ describe("getOnboardingStep", () => {
       format: "BOTH",
       cadence: "BOTH",
       mode: "BOTH",
-      languageId: language.id,
       timezone: "Asia/Jerusalem",
       reasons: [],
       availability: [],

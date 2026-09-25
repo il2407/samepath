@@ -3,7 +3,14 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
-import { leaveGroup, reportGroupConcern, requestToJoinGroup, type JoinGroupResult } from "@/modules/groups/service";
+import {
+  createGroupByUser,
+  leaveGroup,
+  reportGroupConcern,
+  requestToJoinGroup,
+  type CreateGroupInput,
+  type JoinGroupResult,
+} from "@/modules/groups/service";
 
 export type ActionState = { ok: boolean; result?: JoinGroupResult; error?: string };
 
@@ -12,8 +19,9 @@ export async function joinGroupAction(groupId: string): Promise<ActionState> {
   const result = await requestToJoinGroup(user.id, groupId);
   revalidatePath("/app/groups");
   revalidatePath(`/app/groups/${groupId}`);
+  revalidatePath("/app/matches");
   if (result === "INELIGIBLE") {
-    return { ok: false, error: "לא ניתן להצטרף לקבוצה זו כרגע" };
+    return { ok: false, error: "הקבוצה הזו כבר לא רלוונטית עבורך" };
   }
   if (result === "ACCESS_REQUIRED") {
     return { ok: false, error: "נדרשת גישה פעילה כדי להצטרף לקבוצה. אפשר להפעיל גישה בעמוד התוכנית שלי." };
@@ -27,6 +35,27 @@ export async function leaveGroupAction(groupId: string): Promise<ActionState> {
   revalidatePath("/app/groups");
   revalidatePath(`/app/groups/${groupId}`);
   return { ok: true };
+}
+
+const createGroupSchema = z.object({
+  mode: z.enum(["ONLINE", "IN_PERSON"]),
+  location: z.string().max(200).optional(),
+  schedule: z.string().max(200).optional(),
+  theme: z.string().min(1, "נא לפרט נושא ללמידה").max(200),
+});
+
+export type CreateGroupActionState = { ok: boolean; groupId?: string; error?: string };
+
+export async function createUserGroupAction(input: unknown): Promise<CreateGroupActionState> {
+  const user = await requireUser();
+  const parsed = createGroupSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
+
+  const data: CreateGroupInput = parsed.data;
+  const group = await createGroupByUser(user.id, data);
+  revalidatePath("/app/groups");
+  revalidatePath("/app/matches");
+  return { ok: true, groupId: group.id };
 }
 
 const reportSchema = z.object({

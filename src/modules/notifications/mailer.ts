@@ -47,22 +47,37 @@ class SmtpMailer implements Mailer {
           host: env.SMTP_HOST,
           port: env.SMTP_PORT,
           secure: env.SMTP_PORT === 465,
+          // Port 465 is implicit TLS; every other port must upgrade via
+          // STARTTLS rather than silently falling back to plaintext.
+          requireTLS: env.SMTP_PORT !== 465,
+          connectionTimeout: 10_000,
+          greetingTimeout: 10_000,
           auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD } : undefined,
         }),
       );
+      // A connection failure shouldn't poison every future send for the
+      // life of the process — let the next call retry a fresh transport.
+      this.transportPromise.catch(() => {
+        this.transportPromise = null;
+      });
     }
     return this.transportPromise;
   }
 
   async send(message: MailMessage): Promise<void> {
     const transport = await this.transport();
-    await transport.sendMail({
-      from: env.MAIL_FROM,
-      to: message.to,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-    });
+    try {
+      await transport.sendMail({
+        from: env.MAIL_FROM,
+        to: message.to,
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+      });
+    } catch (error) {
+      console.error(`SmtpMailer: failed to send mail to ${message.to}:`, error);
+      throw error;
+    }
   }
 }
 

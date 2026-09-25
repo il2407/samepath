@@ -10,7 +10,6 @@ import type {
   ConnectionReason,
   Gender,
   GenderPreference,
-  ResumeRetentionPreference,
 } from "@/generated/prisma/client";
 
 // --- Step 1: professional profile -------------------------------------------------
@@ -31,10 +30,16 @@ export interface ProfileStepOneInput {
   regionId: string | null;
   shortIntro: string;
   tagIds: string[];
-  languageIds: string[];
   positions: EmploymentPositionInput[];
   /** Self-reported, optional — used only to evaluate a match's genderPreference. */
   gender?: Gender | null;
+  /**
+   * Required (moved here from the privacy step — see IdentityDisclosurePreference's
+   * comment): revealed automatically at the CONNECTED stage like the rest of
+   * identity, but the value itself is collected as part of the professional
+   * profile, since it's a professional artifact, not a privacy choice.
+   */
+  linkedInUrl: string;
 }
 
 export async function saveProfileStepOne(userId: string, input: ProfileStepOneInput): Promise<void> {
@@ -89,23 +94,23 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
       },
     });
 
+    // Dedupe before createMany — callers (e.g. the AI resume parser's
+    // tool-use output) aren't guaranteed to produce unique ids, and
+    // createMany has no upsert semantics, so a repeated id violates the
+    // per-profile unique constraint on these join tables.
+    const targetRoleIds = [...new Set(input.targetRoleIds)];
+    const tagIds = [...new Set(input.tagIds)];
+
     await tx.profileTargetRole.deleteMany({ where: { profileId: profile.id } });
-    if (input.targetRoleIds.length > 0) {
+    if (targetRoleIds.length > 0) {
       await tx.profileTargetRole.createMany({
-        data: input.targetRoleIds.map((targetRoleId) => ({ profileId: profile.id, targetRoleId })),
+        data: targetRoleIds.map((targetRoleId) => ({ profileId: profile.id, targetRoleId })),
       });
     }
 
     await tx.profileTag.deleteMany({ where: { profileId: profile.id } });
-    if (input.tagIds.length > 0) {
-      await tx.profileTag.createMany({ data: input.tagIds.map((tagId) => ({ profileId: profile.id, tagId })) });
-    }
-
-    await tx.profileLanguage.deleteMany({ where: { profileId: profile.id } });
-    if (input.languageIds.length > 0) {
-      await tx.profileLanguage.createMany({
-        data: input.languageIds.map((languageId) => ({ profileId: profile.id, languageId })),
-      });
+    if (tagIds.length > 0) {
+      await tx.profileTag.createMany({ data: tagIds.map((tagId) => ({ profileId: profile.id, tagId })) });
     }
 
     await tx.employmentPosition.deleteMany({ where: { profileId: profile.id } });
@@ -123,6 +128,16 @@ export async function saveProfileStepOne(userId: string, input: ProfileStepOneIn
         })),
       });
     }
+
+    // LinkedIn now lives on the professional-profile step, always present
+    // (required) — always reveals automatically at the CONNECTED stage, so
+    // shareLinkedInPostMatch is written unconditionally true here rather than
+    // being a separate user choice (it used to be set from the privacy step).
+    await tx.identityDisclosurePreference.upsert({
+      where: { profileId: profile.id },
+      update: { linkedInUrl: input.linkedInUrl, shareLinkedInPostMatch: true },
+      create: { profileId: profile.id, linkedInUrl: input.linkedInUrl, shareLinkedInPostMatch: true },
+    });
   });
 }
 
@@ -132,11 +147,11 @@ export async function getProfileEditData(userId: string) {
     include: {
       targetRoles: { select: { targetRoleId: true } },
       tags: { select: { tagId: true } },
-      languages: { select: { languageId: true } },
       employmentPositions: {
         include: { company: { select: { id: true, canonicalName: true } } },
         orderBy: { startDate: "desc" },
       },
+      disclosurePreference: true,
     },
   });
   return profile;
@@ -151,7 +166,6 @@ export interface BlockedCompanyInput {
 }
 
 export interface PrivacyStepInput {
-  employerConfirmed: boolean;
   additionalBlockedCompanies: BlockedCompanyInput[];
   fullName?: string;
   shareCompanyPreMatch: boolean;
@@ -166,46 +180,39 @@ export interface PrivacyStepInput {
   shareFullNamePostMatch: boolean;
   sharePhotoPostMatch: boolean;
   phoneNumber?: string;
+  /**
+   * Contact-info carve-out (see dto.ts's design note): unlike full name/
+   * employer/location, email and phone are never revealed automatically at
+   * the CONNECTED stage — only when the owner explicitly enables these,
+   * any time, including well after onboarding from the settings page.
+   * Default off.
+   */
+  shareEmailPostMatch: boolean;
+  sharePhonePostMatch: boolean;
   // Deliberately no blockEntireCorporateGroup here (backlog item 6 —
   // corporate-group blocking was removed from privacy/engine.ts, so this
   // toggle no longer does anything; the column keeps its DB default of
   // `true` forever, never written to `false` by user action again — see
   // completePrivacyOnboarding below).
   //
-  // Deliberately no shareLinkedInPostMatch/linkedInUrl here (backlog item
-  // 11/12 — LinkedIn is never disclosed, at any stage; see dto.ts).
+  // Deliberately no sharePreciseLocationPostMatch here (backlog item 10 —
+  // automatic reveal at the CONNECTED stage replaces this toggle; see
+  // dto.ts's design note).
   //
-  // Deliberately no sharePreciseLocationPostMatch/shareEmailPostMatch/
-  // sharePhonePostMatch here (backlog item 10 — automatic reveal at the
-  // CONNECTED stage replaces these three toggles; see dto.ts's design
-  // note). `phoneNumber` above is still collected as data (there's still
-  // something to automatically reveal), just no longer gated by its own
-  // toggle.
-  //
-  // Deliberately no resumeRetentionPreference here (removed — see WS1
-  // backlog "duplicated résumé-retention controls"): the real decision for
-  // any résumé actually uploaded during this onboarding pass is made
-  // in-context at draft-confirmation time (ResumeDraftReview's "keep the
-  // file" checkbox -> confirmResumeDraft(userId, uploadId, keepFile) in
-  // resumes/service.ts), which already ran before a user ever reaches this
-  // step. A second, generic "for whenever you upload a resume in the
-  // future" control here was confusing (it also showed up for users who
-  // never uploaded one at all) and duplicated that decision days later with
-  // no new information. The equivalent *default preference for a future
-  // upload* still exists as its own, legitimate, standalone setting in
-  // account settings (PrivacySettingsForm / updatePrivacySettings below) —
-  // that one has a real purpose (there's no in-context draft-review moment
-  // to attach it to from Settings) and is intentionally untouched.
+  // Deliberately no resumeRetentionPreference here (removed entirely —
+  // there is no longer any user choice about résumé retention anywhere in
+  // the product; any uploaded résumé file is always kept, unconditionally,
+  // see resumes/service.ts's confirmResumeDraft).
 }
 
 export async function completePrivacyOnboarding(userId: string, input: PrivacyStepInput): Promise<void> {
-  if (!input.employerConfirmed) {
-    throw new Error("employer confirmation is required before continuing");
-  }
-
   const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
 
   await prisma.$transaction(async (tx) => {
+    // The employer is confirmed implicitly by completing this step (WS5:
+    // the explicit checkbox/gate was removed from the privacy step — the
+    // final, editable confirmation now lives on the overview page instead,
+    // right before activateProfile re-checks currentCompanyConfirmedAt).
     await tx.professionalProfile.update({
       where: { id: profile.id },
       data: {
@@ -236,12 +243,15 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
       });
     }
 
-    // shareLinkedInPostMatch/linkedInUrl and
-    // sharePreciseLocationPostMatch/shareEmailPostMatch/sharePhonePostMatch
-    // are deliberately never written here anymore (backlog items 9-11) —
-    // see PrivacyStepInput's comment above. Their DB columns keep whatever
-    // value they already have (false/null for a new profile, via schema
-    // defaults on create).
+    // sharePreciseLocationPostMatch is deliberately never written here
+    // anymore (backlog item 9) — see PrivacyStepInput's comment above. Its
+    // DB column keeps whatever value it already has (false for a new
+    // profile, via the schema default on create). LinkedIn now lives on the
+    // profile step (saveProfileStepOne writes linkedInUrl/
+    // shareLinkedInPostMatch on this same row) — this upsert only touches
+    // the fields still owned by the privacy step: the
+    // shareEmailPostMatch/sharePhonePostMatch contact-info carve-out are
+    // standing, explicit opt-ins, see PrivacyStepInput's comment above.
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
@@ -250,6 +260,8 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         phoneNumber: input.phoneNumber,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
       },
       create: {
         profileId: profile.id,
@@ -258,6 +270,8 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         phoneNumber: input.phoneNumber,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
       },
     });
 
@@ -278,24 +292,15 @@ export async function completePrivacyOnboarding(userId: string, input: PrivacySt
 // writing UserConfirmation rows) — these are for the settings pages, not
 // first-time setup.
 
-// Unlike PrivacyStepInput (onboarding), the settings page keeps
-// resumeRetentionPreference — see PrivacySettingsForm.tsx's own, separate
-// "future resume upload" section, explicitly preserved as-is (it's not a
-// duplicate of the onboarding control removed above; it's the only place
-// this preference is ever set once a user is past onboarding).
-export type PrivacySettingsInput = Omit<PrivacyStepInput, "employerConfirmed"> & {
-  resumeRetentionPreference: ResumeRetentionPreference;
-};
+// Same shape as PrivacyStepInput (onboarding) — no resumeRetentionPreference
+// here either; résumé retention is no longer a user choice anywhere in the
+// product (see the comment on PrivacyStepInput above).
+export type PrivacySettingsInput = PrivacyStepInput;
 
 export async function updatePrivacySettings(userId: string, input: PrivacySettingsInput): Promise<void> {
   const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
 
   await prisma.$transaction(async (tx) => {
-    await tx.professionalProfile.update({
-      where: { id: profile.id },
-      data: { resumeRetentionPreference: input.resumeRetentionPreference },
-    });
-
     // No privacyPreference write here anymore (backlog item 6):
     // blockEntireCorporateGroup was the only field this settings page ever
     // changed on that row, and it's no longer user-configurable — the row
@@ -314,9 +319,13 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
       });
     }
 
-    // See the matching comment in completePrivacyOnboarding above — LinkedIn
-    // and the three legacy per-field post-match toggles are deliberately
-    // never written here anymore.
+    // See the matching comment in completePrivacyOnboarding above —
+    // sharePreciseLocationPostMatch is deliberately never written here.
+    // LinkedIn is now owned by the profile-step settings form
+    // (updateProfileSettingsAction -> saveProfileStepOne), not this one; the
+    // shareEmailPostMatch/sharePhonePostMatch contact-info carve-out is
+    // still a standing, explicit opt-in the owner can change any time from
+    // this settings page.
     await tx.identityDisclosurePreference.upsert({
       where: { profileId: profile.id },
       update: {
@@ -325,6 +334,8 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         phoneNumber: input.phoneNumber,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
       },
       create: {
         profileId: profile.id,
@@ -333,6 +344,8 @@ export async function updatePrivacySettings(userId: string, input: PrivacySettin
         shareFullNamePostMatch: input.shareFullNamePostMatch,
         sharePhotoPostMatch: input.sharePhotoPostMatch,
         phoneNumber: input.phoneNumber,
+        shareEmailPostMatch: input.shareEmailPostMatch,
+        sharePhonePostMatch: input.sharePhonePostMatch,
       },
     });
   });
@@ -371,7 +384,6 @@ export interface PreferencesStepInput {
   mode: ConnectionModePreference;
   /** Who to be matched with, by gender. Defaults to BOTH (no filter). */
   genderPreference?: GenderPreference;
-  languageId: string | null;
   timezone: string;
   reasons: ConnectionReason[];
   availability: AvailabilitySlotInput[];
@@ -393,7 +405,6 @@ export async function completeConnectionPreferences(userId: string, input: Prefe
         cadence: input.cadence,
         mode: input.mode,
         genderPreference: input.genderPreference ?? "BOTH",
-        languageId: input.languageId,
         timezone: input.timezone,
         reasons: input.reasons,
       },
@@ -405,7 +416,6 @@ export async function completeConnectionPreferences(userId: string, input: Prefe
         cadence: input.cadence,
         mode: input.mode,
         genderPreference: input.genderPreference ?? "BOTH",
-        languageId: input.languageId,
         timezone: input.timezone,
         reasons: input.reasons,
       },
@@ -444,14 +454,14 @@ export async function getOnboardingOverviewData(userId: string) {
       targetRoles: { include: { targetRole: true } },
       region: true,
       tags: { include: { tag: true } },
-      languages: { include: { language: true } },
       employmentPositions: {
         include: { company: { select: { id: true, canonicalName: true } } },
         orderBy: { startDate: "desc" },
       },
       currentCompany: { select: { id: true, canonicalName: true } },
+      seniorityBand: true,
       disclosurePreference: true,
-      connectionPreference: { include: { language: true } },
+      connectionPreference: true,
       availabilitySlots: true,
     },
   });

@@ -1,3 +1,4 @@
+import { AuthShell } from "@/modules/auth/AuthShell";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Container } from "@/shared/ui/Container";
@@ -10,7 +11,7 @@ export default async function ForgotPasswordPage() {
   await redirectIfAuthenticated();
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-mint to-paper py-16">
+    <AuthShell>
       <Container className="max-w-md">
         <div className="rounded-3xl border border-border bg-white p-8 shadow-sm">
           <Link href="/" className="text-lg font-bold text-ink">
@@ -29,6 +30,6 @@ export default async function ForgotPasswordPage() {
           </p>
         </div>
       </Container>
-    </main>
+    </AuthShell>
   );
 }

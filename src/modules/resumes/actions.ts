@@ -46,13 +46,13 @@ const stepOneSchema = z.object({
   regionId: z.string().nullable(),
   shortIntro: z.string().max(400, "עד 400 תווים"),
   tagIds: z.array(z.string()),
-  languageIds: z.array(z.string()).min(1, "יש לבחור לפחות שפה אחת"),
   positions: z.array(positionSchema),
+  gender: z.enum(["MALE", "FEMALE"]).nullable().optional(),
+  linkedInUrl: z.string().min(1, "יש להזין קישור לפרופיל LinkedIn").url("קישור לא תקין"),
 });
 
 const confirmSchema = z.object({
   uploadId: z.string().min(1),
-  keepFile: z.boolean(),
   profile: stepOneSchema,
 });
 
@@ -63,7 +63,7 @@ export async function confirmResumeDraftAction(input: unknown): Promise<ActionSt
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
   await saveProfileStepOne(user.id, parsed.data.profile as ProfileStepOneInput);
-  await confirmResumeDraft(user.id, parsed.data.uploadId, parsed.data.keepFile);
+  await confirmResumeDraft(user.id, parsed.data.uploadId);
 
   revalidatePath("/app", "layout");
   redirect("/app/onboarding/privacy");
@@ -103,9 +103,9 @@ export async function discardResumeDraftAction(uploadId: string): Promise<Action
  * other profile field, and stays on the settings page instead of
  * continuing the onboarding wizard.
  */
-export async function verifyResumeFromSettingsAction(input: { uploadId: string; keepFile: boolean }): Promise<ActionState> {
+export async function verifyResumeFromSettingsAction(input: { uploadId: string }): Promise<ActionState> {
   const user = await requireUser();
-  await confirmResumeDraft(user.id, input.uploadId, input.keepFile);
+  await confirmResumeDraft(user.id, input.uploadId);
   revalidatePath("/app/settings/profile");
   return { ok: true };
 }

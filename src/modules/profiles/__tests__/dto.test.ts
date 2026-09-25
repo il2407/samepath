@@ -14,13 +14,13 @@ function raw(overrides: Partial<RawProfileForDto> = {}): RawProfileForDto {
     seniorityBand: { labelHe: "מידלוול" },
     targetRoles: [{ labelHe: "מפתח/ת Backend" }],
     tags: [{ labelHe: "TypeScript" }, { labelHe: "PostgreSQL" }],
-    languages: [{ labelHe: "עברית" }],
     shortIntro: "מפתח/ת עם ניסיון במערכות בזמן אמת.",
     connectionPreference: { format: "BOTH", cadence: "BOTH", mode: "ONLINE", reasons: ["SHARE_JOB_SEARCH"] },
     availabilitySlots: [{ dayOfWeek: 2, startMinute: 600, endMinute: 720 }],
     region: { labelHe: "מרכז" },
     company: { canonicalName: "Acme Corp" },
     cvVerifiedAt: null,
+    experienceMonths: 60,
     disclosurePreference: {
       fullName: "מיכל כהן",
       shareCompanyPreMatch: false,
@@ -29,6 +29,10 @@ function raw(overrides: Partial<RawProfileForDto> = {}): RawProfileForDto {
       photoMimeType: null,
       sharePhotoPostMatch: false,
       phoneNumber: null,
+      linkedInUrl: null,
+      shareLinkedInPostMatch: false,
+      shareEmailPostMatch: false,
+      sharePhonePostMatch: false,
     },
     userEmail: "michal@example.com",
     ...overrides,
@@ -59,7 +63,6 @@ describe("toPreMatchDTO", () => {
       seniorityBand: "מידלוול",
       targetRoles: ["מפתח/ת Backend"],
       skillsAndDomains: ["TypeScript", "PostgreSQL"],
-      languages: ["עברית"],
       shortIntro: "מפתח/ת עם ניסיון במערכות בזמן אמת.",
       connectionFormat: "BOTH",
       connectionCadence: "BOTH",
@@ -68,6 +71,7 @@ describe("toPreMatchDTO", () => {
       availabilitySummary: ["שלישי בוקר"],
       company: null,
       cvVerified: false,
+      yearsOfExperience: 5,
     });
   });
 
@@ -102,6 +106,21 @@ describe("toPreMatchDTO", () => {
     for (const key of forbiddenKeys) {
       expect(dto).not.toHaveProperty(key);
     }
+  });
+
+  describe("yearsOfExperience — unconditional, no employer names leaked", () => {
+    it("rounds down whole months into years", () => {
+      expect(toPreMatchDTO(raw({ experienceMonths: 47 }), false).yearsOfExperience).toBe(3);
+    });
+
+    it("is null when there is no recorded experience at all (0 months)", () => {
+      expect(toPreMatchDTO(raw({ experienceMonths: 0 }), false).yearsOfExperience).toBeNull();
+    });
+
+    it("is shown regardless of shareCompanyPreMatch on either side", () => {
+      expect(toPreMatchDTO(raw({ experienceMonths: 60 }), false).yearsOfExperience).toBe(5);
+      expect(toPreMatchDTO(raw({ experienceMonths: 60 }), true).yearsOfExperience).toBe(5);
+    });
   });
 
   describe("company — reciprocal visibility (backlog item 8)", () => {
@@ -208,20 +227,46 @@ describe("toMidStageDTO — the mutual-interest stage, before a real Connection 
 });
 
 describe("toPostMatchDTO — the final CONNECTED stage (a real Connection exists)", () => {
-  it("automatically reveals full name, employer, location, email, and phone — no per-field toggle required (backlog item 10 design decision)", () => {
+  it("automatically reveals full name, employer, and location — no per-field toggle required (backlog item 10 design decision)", () => {
     const dto = toPostMatchDTO(raw());
     expect(dto.fullName).toBe("מיכל כהן");
     expect(dto.company).toBe("Acme Corp");
     expect(dto.region).toBe("מרכז");
-    expect(dto.email).toBe("michal@example.com");
-    // phoneNumber stays null here only because raw()'s default has no
-    // phoneNumber on file at all — see the next test for the case where one exists.
-    expect(dto.phoneNumber).toBeNull();
   });
 
-  it("reveals a phone number automatically once one is on file, with no separate toggle", () => {
-    const dto = toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, phoneNumber: "050-0000000" } }));
-    expect(dto.phoneNumber).toBe("050-0000000");
+  describe("email — gated behind the owner's own shareEmailPostMatch, never automatic (contact-info carve-out)", () => {
+    it("is null when the candidate has not opted into shareEmailPostMatch", () => {
+      const dto = toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, shareEmailPostMatch: false } }));
+      expect(dto.email).toBeNull();
+    });
+
+    it("is revealed once the candidate opts in", () => {
+      const dto = toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, shareEmailPostMatch: true } }));
+      expect(dto.email).toBe("michal@example.com");
+    });
+  });
+
+  describe("phoneNumber — gated behind the owner's own sharePhonePostMatch, never automatic (contact-info carve-out)", () => {
+    it("is null when a number is on file but the candidate has not opted into sharePhonePostMatch", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, phoneNumber: "050-0000000", sharePhonePostMatch: false } }),
+      );
+      expect(dto.phoneNumber).toBeNull();
+    });
+
+    it("is null when opted in but no number was ever entered — never fabricated", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, phoneNumber: null, sharePhonePostMatch: true } }),
+      );
+      expect(dto.phoneNumber).toBeNull();
+    });
+
+    it("is revealed once a number is on file and the candidate opted in", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, phoneNumber: "050-0000000", sharePhonePostMatch: true } }),
+      );
+      expect(dto.phoneNumber).toBe("050-0000000");
+    });
   });
 
   it("company is null when there's simply no current company on record, automatic reveal notwithstanding", () => {
@@ -232,9 +277,34 @@ describe("toPostMatchDTO — the final CONNECTED stage (a real Connection exists
     expect(toPostMatchDTO(raw({ disclosurePreference: { ...raw().disclosurePreference!, fullName: null } })).fullName).toBeNull();
   });
 
-  it("never includes a linkedInUrl key at all — LinkedIn is structurally removed, not merely hidden", () => {
-    const dto = toPostMatchDTO(raw()) as unknown as Record<string, unknown>;
-    expect(dto).not.toHaveProperty("linkedInUrl");
+  describe("linkedInUrl — automatic once a Connection exists, same as the other post-match fields", () => {
+    it("is revealed automatically with no separate toggle, even when shareLinkedInPostMatch is false", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, linkedInUrl: "https://linkedin.com/in/michal", shareLinkedInPostMatch: false } }),
+      );
+      expect(dto.linkedInUrl).toBe("https://linkedin.com/in/michal");
+    });
+
+    it("stays null when no URL was ever entered — never fabricated", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, linkedInUrl: null, shareLinkedInPostMatch: true } }),
+      );
+      expect(dto.linkedInUrl).toBeNull();
+    });
+
+    it("is revealed when a URL is on file", () => {
+      const dto = toPostMatchDTO(
+        raw({ disclosurePreference: { ...raw().disclosurePreference!, linkedInUrl: "https://linkedin.com/in/michal", shareLinkedInPostMatch: true } }),
+      );
+      expect(dto.linkedInUrl).toBe("https://linkedin.com/in/michal");
+    });
+  });
+
+  it("still never includes a linkedInUrl key pre-match or mid-stage — only once CONNECTED", () => {
+    const preMatch = toPreMatchDTO(raw(), true) as unknown as Record<string, unknown>;
+    const midStage = toMidStageDTO(raw(), true) as unknown as Record<string, unknown>;
+    expect(preMatch).not.toHaveProperty("linkedInUrl");
+    expect(midStage).not.toHaveProperty("linkedInUrl");
   });
 
   it("still includes every pre-match field unchanged", () => {

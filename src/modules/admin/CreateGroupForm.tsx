@@ -13,19 +13,16 @@ interface Option {
 export function CreateGroupForm({
   fields,
   targetRoles,
-  languages,
   guides,
 }: {
   fields: Option[];
   targetRoles: Option[];
-  languages: Option[];
   guides: Option[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [professionalFieldId, setProfessionalFieldId] = useState("");
   const [targetRoleId, setTargetRoleId] = useState("");
-  const [languageId, setLanguageId] = useState("");
   const [mode, setMode] = useState<"ONLINE" | "IN_PERSON">("ONLINE");
   const [schedule, setSchedule] = useState("");
   const [capacityMin, setCapacityMin] = useState(4);
@@ -47,7 +44,6 @@ export function CreateGroupForm({
         title: title.trim(),
         professionalFieldId: professionalFieldId || undefined,
         targetRoleId: targetRoleId || undefined,
-        languageId: languageId || undefined,
         mode,
         schedule: schedule.trim() || undefined,
         capacityMin,
@@ -90,14 +86,6 @@ export function CreateGroupForm({
           {targetRoles.map((r) => (
             <option key={r.id} value={r.id}>
               {r.labelHe}
-            </option>
-          ))}
-        </select>
-        <select value={languageId} onChange={(e) => setLanguageId(e.target.value)} className="rounded-xl border border-border px-3 py-2 text-sm">
-          <option value="">שפה (לא חובה)</option>
-          {languages.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.labelHe}
             </option>
           ))}
         </select>

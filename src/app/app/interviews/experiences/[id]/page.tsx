@@ -1,3 +1,5 @@
+import { ContentProposal } from "@/modules/connections/ContentProposal";
+import { FlowNav } from "../../../FlowNav";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/modules/auth/session";
 import { getPublicExperienceDetail } from "@/modules/interviews/library";
@@ -5,14 +7,18 @@ import { ExperienceDetailActions } from "@/modules/interviews/ExperienceDetailAc
 import { interviewOutcomeLabels, interviewStageLabels } from "@/modules/interviews/labels";
 import { Container } from "@/shared/ui/Container";
 
-export default async function ExperienceDetailPage({ params }: PageProps<"/app/interviews/experiences/[id]">) {
-  await requireUser();
+export default async function ExperienceDetailPage({ params, searchParams }: PageProps<"/app/interviews/experiences/[id]">) {
+  const user = await requireUser();
+  const query = await searchParams;
+  const connectionId = typeof query.connection === "string" ? query.connection : undefined;
   const { id } = await params;
   const experience = await getPublicExperienceDetail(id);
   if (!experience) notFound();
 
   return (
     <Container className="max-w-2xl py-10">
+      <FlowNav prev={{ href: `/app/interviews${connectionId ? `?connection=${encodeURIComponent(connectionId)}` : ""}`, label: "חזרה לשאלות מראיונות" }} />
+      {experience.questions.length > 0 && <ContentProposal userId={user.id} contentKey={`interview:${id}`} connectionId={connectionId} />}
       <p className="text-xs text-muted">מידע קהילתי, לא מאומת. עשוי להיות חלקי או לא מעודכן.</p>
       <h1 className="mt-2 text-2xl font-bold text-ink">{experience.companyName}</h1>
       <p className="mt-1 text-sm text-muted">

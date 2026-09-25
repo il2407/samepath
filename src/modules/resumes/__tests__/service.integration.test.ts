@@ -150,6 +150,9 @@ describe("uploadResume", () => {
     expect(extracted.professionalFieldIdGuess).toBeNull();
     expect(extracted.matchedRegionId).toBeNull();
     expect(extracted.shortIntroGuess).toBeNull();
+    // aiSummaryGuess requires composing new text, which the deterministic
+    // parser (used in this integration test) can never do — always null.
+    expect(extracted.aiSummaryGuess).toBeNull();
   });
 });
 
@@ -240,17 +243,17 @@ describe("getResumeStatusForUser", () => {
 });
 
 describe("confirmResumeDraft", () => {
-  it("records a confirmation and deletes the file by default", async () => {
+  it("records a confirmation and keeps the file", async () => {
     const user = await createTestUser();
     const result = await uploadResume(user.user.id, resumeFile());
     if (!result.ok) throw new Error("upload failed");
 
-    const before = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: result.uploadId } });
-    await confirmResumeDraft(user.user.id, result.uploadId, false);
+    await confirmResumeDraft(user.user.id, result.uploadId);
 
     const after = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: result.uploadId } });
-    expect(after.status).toBe("DELETED");
-    await expect(getStorage().get(before.storageKey)).rejects.toThrow();
+    expect(after.status).toBe("READY");
+    const stored = await getStorage().get(after.storageKey);
+    expect(stored.byteLength).toBeGreaterThan(0);
 
     const confirmation = await prisma.userConfirmation.findFirst({ where: { userId: user.user.id, type: "RESUME_DRAFT_CONFIRMED" } });
     expect(confirmation).not.toBeNull();
@@ -262,26 +265,13 @@ describe("confirmResumeDraft", () => {
     expect(profile.cvVerifiedAt).not.toBeNull();
   });
 
-  it("keeps the file when keepFile is true", async () => {
-    const user = await createTestUser();
-    const result = await uploadResume(user.user.id, resumeFile());
-    if (!result.ok) throw new Error("upload failed");
-
-    await confirmResumeDraft(user.user.id, result.uploadId, true);
-
-    const after = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: result.uploadId } });
-    expect(after.status).toBe("READY");
-    const stored = await getStorage().get(after.storageKey);
-    expect(stored.byteLength).toBeGreaterThan(0);
-  });
-
   it("refuses to confirm another user's upload", async () => {
     const owner = await createTestUser();
     const attacker = await createTestUser();
     const result = await uploadResume(owner.user.id, resumeFile());
     if (!result.ok) throw new Error("upload failed");
 
-    await expect(confirmResumeDraft(attacker.user.id, result.uploadId, false)).rejects.toThrow();
+    await expect(confirmResumeDraft(attacker.user.id, result.uploadId)).rejects.toThrow();
   });
 });
 

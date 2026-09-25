@@ -18,10 +18,6 @@ export async function listSeniorityBands() {
   return prisma.seniorityBand.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
 }
 
-export async function listLanguages() {
-  return prisma.language.findMany({ orderBy: { code: "asc" } });
-}
-
 export async function listRegions() {
   return prisma.region.findMany({ orderBy: { code: "asc" } });
 }
@@ -31,10 +27,9 @@ export async function listTags(kind?: "SKILL" | "DOMAIN" | "TOPIC") {
 }
 
 export async function loadOnboardingFormOptions() {
-  const [fields, bands, languages, regions, skills, domains] = await Promise.all([
+  const [fields, bands, regions, skills, domains] = await Promise.all([
     listProfessionalFields(),
     listSeniorityBands(),
-    listLanguages(),
     listRegions(),
     listTags("SKILL"),
     listTags("DOMAIN"),
@@ -44,7 +39,6 @@ export async function loadOnboardingFormOptions() {
     fields,
     targetRoles: targetRolesByField.flat(),
     bands,
-    languages,
     regions,
     skills,
     domains,

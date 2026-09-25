@@ -55,7 +55,7 @@ describe("LandingPage", () => {
     render(<LandingPage />);
 
     // Several sections repeat this exact CTA copy (Header, Hero, HowItWorks bottom
-    // CTA, Pricing, FinalCta, MobileCta) — every one of them must resolve to the
+    // CTA, Pricing, FinalCta) — every one of them must resolve to the
     // real /register route (verified to exist at src/app/register/page.tsx), never
     // a typo'd or stale path.
     const registerLinks = screen
