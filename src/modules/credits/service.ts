@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/shared/db";
+import { applyCreditBonusDays, getAccessStatus } from "@/modules/access-passes/service";
 import { cappedBonusDays, type ConversionTier, type RewardPolicyConfig } from "@/modules/credits/rewards";
 import { Prisma, type CreditReason } from "@/generated/prisma/client";
 
@@ -105,33 +106,38 @@ export async function convertCredits(userId: string, creditsToSpend: number): Pr
   const tier = policy.conversionTiers.find((t) => t.credits === creditsToSpend);
   if (!tier) return { ok: false, reason: "invalid_tier" };
 
-  const balance = await getCreditBalance(userId);
-  if (balance < creditsToSpend) return { ok: false, reason: "insufficient_credits" };
+  // Flip any lapsed pass to EXPIRED first so the bonus days extend a pass
+  // that's actually still running, not one that already ended.
+  await getAccessStatus(userId);
 
-  const windowStart = new Date(Date.now() - policy.bonusWindowDays * 24 * 60 * 60 * 1000);
-  const grantedInWindow = await prisma.creditConversion.aggregate({
-    where: { userId, createdAt: { gte: windowStart } },
-    _sum: { accessDaysGranted: true },
-  });
-  const alreadyGranted = grantedInWindow._sum.accessDaysGranted ?? 0;
-  const daysToGrant = cappedBonusDays(tier.accessDays, alreadyGranted, policy.maxBonusExtensionDaysPerWindow);
-  if (daysToGrant <= 0) return { ok: false, reason: "window_cap_reached" };
+  return prisma.$transaction(async (tx) => {
+    // Serialize conversions per user: without this, two concurrent requests
+    // could both pass the balance check and spend the same credits twice.
+    await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
 
-  await prisma.$transaction([
-    prisma.creditLedgerEntry.create({
+    const balance = await tx.creditLedgerEntry.aggregate({ where: { userId }, _sum: { amount: true } });
+    if ((balance._sum.amount ?? 0) < creditsToSpend) return { ok: false, reason: "insufficient_credits" } as const;
+
+    const windowStart = new Date(Date.now() - policy.bonusWindowDays * 24 * 60 * 60 * 1000);
+    const grantedInWindow = await tx.creditConversion.aggregate({
+      where: { userId, createdAt: { gte: windowStart } },
+      _sum: { accessDaysGranted: true },
+    });
+    const alreadyGranted = grantedInWindow._sum.accessDaysGranted ?? 0;
+    const daysToGrant = cappedBonusDays(tier.accessDays, alreadyGranted, policy.maxBonusExtensionDaysPerWindow);
+    if (daysToGrant <= 0) return { ok: false, reason: "window_cap_reached" } as const;
+
+    await tx.creditLedgerEntry.create({
       data: {
         userId,
         amount: -creditsToSpend,
         reason: "CONVERSION",
         idempotencyKey: `conversion:${userId}:${Date.now()}:${randomUUID()}`,
       },
-    }),
-    prisma.creditConversion.create({ data: { userId, creditsSpent: creditsToSpend, accessDaysGranted: daysToGrant } }),
-  ]);
+    });
+    await tx.creditConversion.create({ data: { userId, creditsSpent: creditsToSpend, accessDaysGranted: daysToGrant } });
+    await applyCreditBonusDays(userId, daysToGrant, tx);
 
-  // TODO(access-passes module): extend/create the user's AccessPass by
-  // daysToGrant. Recorded here in the ledger/conversion tables regardless,
-  // so nothing needs to change in this function once that module lands.
-
-  return { ok: true, accessDaysGranted: daysToGrant };
+    return { ok: true, accessDaysGranted: daysToGrant } as const;
+  });
 }

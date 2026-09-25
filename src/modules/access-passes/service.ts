@@ -145,6 +145,58 @@ export async function grantReplacementAccessPass(userId: string, reason: string,
 }
 
 /**
+ * Applies access days bought with credits (credits/service.ts#convertCredits).
+ * Extends the active pass if there is one; otherwise lengthens the oldest
+ * pending pass so the days count once its clock starts; otherwise creates a
+ * new pending pass that activates on the next meaningful event, same as a
+ * paid or free-trial pass. Takes the caller's transaction client so the days
+ * land atomically with the credit debit. Callers should run
+ * expireStalePassesForUser first (getAccessStatus does) so an expired pass
+ * isn't mistaken for an active one.
+ */
+export async function applyCreditBonusDays(
+  userId: string,
+  days: number,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<void> {
+  const metadata = { source: "credit_conversion", days };
+
+  const activePass = await client.accessPass.findFirst({
+    where: { userId, status: "ACTIVE", expiresAt: { gt: new Date() } },
+    orderBy: { expiresAt: "desc" },
+  });
+  if (activePass) {
+    await client.accessPass.update({
+      where: { id: activePass.id },
+      data: {
+        expiresAt: computeExpiryDate(activePass.expiresAt!, days),
+        bonusDaysFromCredits: { increment: days },
+      },
+    });
+    await client.accessPassEvent.create({ data: { accessPassId: activePass.id, type: "EXTENDED", metadata } });
+    return;
+  }
+
+  const pendingPass = await client.accessPass.findFirst({
+    where: { userId, status: "PENDING_ACTIVATION" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (pendingPass) {
+    await client.accessPass.update({
+      where: { id: pendingPass.id },
+      data: { durationDays: { increment: days }, bonusDaysFromCredits: { increment: days } },
+    });
+    await client.accessPassEvent.create({ data: { accessPassId: pendingPass.id, type: "EXTENDED", metadata } });
+    return;
+  }
+
+  const created = await client.accessPass.create({
+    data: { userId, status: "PENDING_ACTIVATION", durationDays: days, bonusDaysFromCredits: days },
+  });
+  await client.accessPassEvent.create({ data: { accessPassId: created.id, type: "CREATED", metadata } });
+}
+
+/**
  * Lazily checked (no cron in the MVP) — call from a low-frequency,
  * already-authenticated path. Idempotent within the reminder window via a
  * NotificationLog check, so it's safe to call on every dashboard visit.

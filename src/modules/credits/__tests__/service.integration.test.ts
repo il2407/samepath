@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetTestDatabase } from "@/shared/test/db";
-import { createTestUser } from "@/shared/test/fixtures";
+import { createTestUser, grantActiveAccessPass } from "@/shared/test/fixtures";
+import { grantFreeTrialAccessPass } from "@/modules/access-passes/service";
 import { prisma } from "@/shared/db";
 import {
   convertCredits,
@@ -77,7 +78,7 @@ describe("reverseCreditGrant", () => {
     // policy allows this scenario to exist in the ledger (it's a ledger, not
     // a hard-clamped wallet) — the invariant the spec cares about is that a
     // reversal never retroactively removes access days already consumed,
-    // which is enforced in the (future) access-pass layer, not here.
+    // which holds because conversion writes days onto the AccessPass itself.
     const user = await createTestUser();
     await grantCreditsIdempotent(user.user.id, 50, "CONTRIBUTION_APPROVED", "approval:exp-1");
     await convertCredits(user.user.id, 50);
@@ -126,5 +127,49 @@ describe("convertCredits", () => {
     // window cap now exhausted
     const third = await convertCredits(user.user.id, 50);
     expect(third).toEqual({ ok: false, reason: "window_cap_reached" });
+  });
+});
+
+describe("convertCredits -> access pass", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("extends an active pass's expiry by the granted days", async () => {
+    const user = await createTestUser();
+    const pass = await grantActiveAccessPass(user.user.id, 10);
+    await grantCreditsIdempotent(user.user.id, 50, "CONTRIBUTION_APPROVED", "approval:exp-1");
+
+    await convertCredits(user.user.id, 50);
+
+    const after = await prisma.accessPass.findUniqueOrThrow({ where: { id: pass.id } });
+    expect(after.expiresAt!.getTime() - pass.expiresAt!.getTime()).toBe(7 * DAY);
+    expect(after.bonusDaysFromCredits).toBe(7);
+    expect(await prisma.accessPassEvent.count({ where: { accessPassId: pass.id, type: "EXTENDED" } })).toBe(1);
+  });
+
+  it("lengthens a not-yet-activated pass instead of starting a new clock", async () => {
+    const user = await createTestUser();
+    const pass = await grantFreeTrialAccessPass(user.user.id, 30);
+    await grantCreditsIdempotent(user.user.id, 50, "CONTRIBUTION_APPROVED", "approval:exp-1");
+
+    await convertCredits(user.user.id, 50);
+
+    const after = await prisma.accessPass.findUniqueOrThrow({ where: { id: pass.id } });
+    expect(after.status).toBe("PENDING_ACTIVATION");
+    expect(after.durationDays).toBe(37);
+    expect(await prisma.accessPass.count({ where: { userId: user.user.id } })).toBe(1);
+  });
+
+  it("creates a pending pass when the user's only pass has expired", async () => {
+    const user = await createTestUser();
+    const old = await grantActiveAccessPass(user.user.id, 10);
+    await prisma.accessPass.update({ where: { id: old.id }, data: { expiresAt: new Date(Date.now() - DAY) } });
+    await grantCreditsIdempotent(user.user.id, 50, "CONTRIBUTION_APPROVED", "approval:exp-1");
+
+    await convertCredits(user.user.id, 50);
+
+    expect((await prisma.accessPass.findUniqueOrThrow({ where: { id: old.id } })).status).toBe("EXPIRED");
+    const created = await prisma.accessPass.findFirstOrThrow({ where: { userId: user.user.id, status: "PENDING_ACTIVATION" } });
+    expect(created.durationDays).toBe(7);
+    expect(created.bonusDaysFromCredits).toBe(7);
   });
 });

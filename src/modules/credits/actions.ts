@@ -17,5 +17,6 @@ export async function convertCreditsAction(creditsToSpend: number): Promise<Conv
   const result = await convertCredits(user.id, creditsToSpend);
   if (!result.ok) return { ok: false, error: errorMessages[result.reason] };
   revalidatePath("/app/credits");
+  revalidatePath("/app/access");
   return { ok: true, accessDaysGranted: result.accessDaysGranted };
 }
