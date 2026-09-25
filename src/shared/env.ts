@@ -46,6 +46,8 @@ const envSchema = z.object({
 
   RATE_LIMIT_ADAPTER: z.enum(["memory", "postgres"]).default("memory"),
 
+  MALWARE_SCANNER: z.enum(["heuristic", "noop"]).default("heuristic"),
+
   // Shared secret an external scheduler presents to POST/GET
   // /api/jobs/matching. Optional at the env-schema level (so environments
   // that haven't set it up yet don't fail validation) but the route itself

@@ -44,9 +44,10 @@ it, and was verified live in a browser at least once during development.
 
 **Deliberately not implemented (documented, not stubbed silently):**
 
-- Real payment processing, SMS, or a real malware scanner — all three have
-  a defined interface and a fake/local/no-op implementation, matching the
-  build brief's explicit "fake/local impl only" scope. See
+- Real payment processing or SMS — both have a defined interface and a
+  fake/local implementation, matching the build brief's explicit
+  "fake/local impl only" scope. Upload scanning is structural
+  (in-process), not signature-based antivirus. See
   [Adapters](#adapters) and `docs/security-hardening.md`.
 - Any JobTracker Pro integration — `docs/jobtracker-integration.md` and
   `src/modules/integrations/jobtracker/types.ts` document a proposed
@@ -348,7 +349,7 @@ the existing `/admin/guides` UI (category `intro` / `coding` /
 
 Onboarding accepts a PDF or Word resume as an alternative to manual entry
 (`src/modules/resumes/`). Upload runs mime/size validation, a malware-scan
-gate (interface + `NoopScanner` placeholder — see
+gate (structural active-content inspection — see
 `docs/security-hardening.md`), text extraction (`pdf-parse` for PDF,
 `mammoth` for `.docx`), and a **pure, DB-free deterministic parser**
 (`deterministic-parser.ts`) that heuristically finds date-ranged
@@ -379,14 +380,14 @@ one:
 | File storage | `Storage` (`shared/storage.ts`) | `LocalStorage` (`.local-storage/`, git-ignored) | `STORAGE_ADAPTER=local\|s3` |
 | Payments | `PaymentProvider` (`payments/provider.ts`) | `FakePaymentProvider` | `PAYMENT_PROVIDER=fake` |
 | Resume parsing | — | Deterministic heuristic parser | `RESUME_PARSER=deterministic\|ai` |
-| Malware scanning | `MalwareScanner` (`resumes/malware-scan.ts`) | `NoopScanner` (always reports clean) | — |
+| Malware scanning | `MalwareScanner` (`resumes/malware-scan.ts`) | Structural inspection (`file-inspection.ts`); `NoopScanner` for debugging | `MALWARE_SCANNER=heuristic\|noop` |
 | Rate limiting | — | In-memory fixed window (`shared/rate-limit.ts`); Postgres-backed for prod | `RATE_LIMIT_ADAPTER=memory\|postgres` |
 
 **Before any real deployment, at minimum:** switch `MAIL_ADAPTER` to
 `smtp` (the console adapter prints verification codes to stdout — see
 `docs/security-hardening.md`), set `STORAGE_ADAPTER=s3` with a private bucket
 (required on Vercel, whose filesystem is read-only), and
-replace `NoopScanner` with a real scanner. `PAYMENT_PROVIDER` staying
+keep `MALWARE_SCANNER=heuristic` (the default). `PAYMENT_PROVIDER` staying
 `fake` is a hard product decision, not an oversight — no real payment
 processing exists anywhere in this codebase, per the build brief's
 explicit scope.
@@ -450,8 +451,7 @@ through the items below first:
    [Adapters](#adapters); this one is not optional.
 4. `STORAGE_ADAPTER=s3` pointed at a real private bucket (AWS S3 or any
    S3-compatible store such as Cloudflare R2 via `S3_ENDPOINT`).
-5. A real malware scanner behind `MalwareScanner` before accepting
-   uploads from untrusted users.
+5. `MALWARE_SCANNER=heuristic` (the default) — never `noop` in production.
 6. `RATE_LIMIT_ADAPTER=postgres` (shared `rate_limit_buckets` table) the
    moment more than one server instance is running — always on Vercel.
 7. A nonce-based script CSP — baseline headers (HSTS, `X-Frame-Options`,
@@ -511,7 +511,7 @@ here rather than silently assumed away:
 - [ ] Legal review of every item above
 - [ ] `MAIL_ADAPTER=smtp` with real credentials
 - [ ] `STORAGE_ADAPTER=s3` configured against a private bucket
-- [ ] Real `MalwareScanner` implementation
+- [x] Upload scanning (`MALWARE_SCANNER=heuristic`, structural — see `docs/security-hardening.md`)
 - [ ] Real `PaymentProvider` implementation (explicit approval required —
       see the build brief's constraint against enabling real payments
       without it)

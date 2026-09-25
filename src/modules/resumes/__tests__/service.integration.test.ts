@@ -37,6 +37,17 @@ describe("uploadResume", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("rejects a PDF carrying JavaScript and deletes the stored file", async () => {
+    const user = await createTestUser();
+    const pdf = buildMinimalPdf(RESUME_TEXT).toString("latin1").replace("%PDF-1.4\n", "%PDF-1.4\n9 0 obj<</S/JavaScript/JS(app.alert(1))>>endobj\n");
+    const result = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from(pdf, "latin1") });
+    expect(result.ok).toBe(false);
+
+    const upload = await prisma.resumeUpload.findFirstOrThrow({ where: { userId: user.user.id } });
+    expect(upload.status).toBe("REJECTED");
+    await expect(getStorage().get(upload.storageKey)).rejects.toThrow();
+  });
+
   it("rejects a file over the size limit", async () => {
     const user = await createTestUser();
     const oversized = Buffer.alloc(6 * 1024 * 1024);
@@ -86,7 +97,7 @@ describe("uploadResume", () => {
 
   it("marks the job FAILED (and creates no draft) instead of throwing when text extraction fails", async () => {
     const user = await createTestUser();
-    const result = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("not a real pdf") });
+    const result = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("%PDF-1.4\nnot a real pdf") });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -159,7 +170,7 @@ describe("uploadResume", () => {
 describe("retryResumeExtraction", () => {
   it("re-runs extraction against the current stored file without creating a duplicate job row", async () => {
     const user = await createTestUser();
-    const initial = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("not a real pdf") });
+    const initial = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("%PDF-1.4\nnot a real pdf") });
     expect(initial.ok).toBe(true);
     if (!initial.ok) return;
 
@@ -189,7 +200,7 @@ describe("retryResumeExtraction", () => {
   it("refuses to retry another user's upload", async () => {
     const owner = await createTestUser();
     const attacker = await createTestUser();
-    const result = await uploadResume(owner.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("garbage") });
+    const result = await uploadResume(owner.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("%PDF-1.4\ngarbage") });
     if (!result.ok) throw new Error("upload failed");
 
     await expect(retryResumeExtraction(attacker.user.id, result.uploadId)).rejects.toThrow();
@@ -207,7 +218,7 @@ describe("retryResumeExtraction", () => {
 
   it("returns a Hebrew error instead of crashing when the stored file no longer exists", async () => {
     const user = await createTestUser();
-    const result = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("garbage") });
+    const result = await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("%PDF-1.4\ngarbage") });
     if (!result.ok) throw new Error("upload failed");
 
     const upload = await prisma.resumeUpload.findUniqueOrThrow({ where: { id: result.uploadId } });
@@ -235,7 +246,7 @@ describe("getResumeStatusForUser", () => {
 
   it("reports extractionFailed and no draft after a failed extraction", async () => {
     const user = await createTestUser();
-    await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("garbage") });
+    await uploadResume(user.user.id, { filename: "resume.pdf", mimeType: PDF_MIME_TYPE, buffer: Buffer.from("%PDF-1.4\ngarbage") });
     const status = await getResumeStatusForUser(user.user.id);
     expect(status?.extractionFailed).toBe(true);
     expect(status?.draft).toBeNull();

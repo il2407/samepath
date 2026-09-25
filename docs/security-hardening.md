@@ -47,11 +47,36 @@ Coverage as of this pass:
 
 `src/modules/resumes/malware-scan.ts` defines a `MalwareScanner` interface
 and the `ResumeUpload.status` flow (`UPLOADED -> SCANNING -> READY /
-REJECTED`) that a real scan step plugs into. The shipped implementation
-(`NoopScanner`) always reports clean — it exists so the integration point
-and status model are real and tested, not so uploads are actually screened.
-**This must be replaced with a real scanner (ClamAV, a cloud AV/DLP API,
-etc.) before accepting uploads from untrusted users.**
+REJECTED`). The default implementation (`MALWARE_SCANNER=heuristic`) runs
+`src/modules/resumes/file-inspection.ts` in-process on every résumé and
+profile-photo upload:
+
+- **Format allow-list by magic bytes** — only PDF, ZIP-based DOCX, JPEG,
+  PNG and WebP pass; anything else (executables, HTML, polyglots with a
+  fake extension) is rejected.
+- **PDF** — FlateDecode streams (including compressed object streams) are
+  inflated and checked, `#xx` name escapes are decoded, and literal strings
+  are stripped first so page text like "React/JS" can't false-positive.
+  Rejects `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile(s)`,
+  `/RichMedia`, `/XFA`, `/SubmitForm`, `/ImportData`, `/GoToE`. An
+  encrypted PDF is accepted only when it has no object streams (encryption
+  never covers plain dictionaries, so everything is still visible).
+- **DOCX** — requires `[Content_Types].xml` + `word/document.xml`; rejects
+  macros (`vbaProject.bin`, macro-enabled content types), ActiveX,
+  embedded OLE objects, and external `attachedTemplate` / `oleObject` /
+  `subDocument` / `frame` relationships (remote template injection).
+  Ordinary external hyperlinks are fine.
+- **Decompression bombs** — total inflated output is capped at 50MB.
+
+**Honest limits:** this is structural, not signature-based antivirus — it
+blocks the document features that carry executable payloads, not specific
+known-bad files, and it doesn't validate image pixel data (photos are
+magic-byte checked and served with `nosniff`, never executed). The only
+reader of uploaded résumés is our own server-side text extraction, which
+never executes document content. If a signature-based layer is wanted
+later, add a cloud AV API as another `MalwareScanner` behind the same
+interface (ClamAV needs a long-running daemon, which Vercel can't host).
+`MALWARE_SCANNER=noop` accepts everything — local debugging only.
 
 ## Structured logging & redaction
 
@@ -135,7 +160,7 @@ directly, so no presigned URLs are issued.
 |---|---|
 | CSRF | Covered by framework default |
 | Rate limiting | Covered; Postgres adapter for multi-instance |
-| Malware scanning | Interface + status flow only, `NoopScanner` in place |
+| Malware scanning | Structural in-process inspection (not signature AV) |
 | Structured logging | Not implemented; console mailer is a real pre-prod risk |
 | Safe error messages | Covered |
 | DB constraints | Covered, test-verified |
