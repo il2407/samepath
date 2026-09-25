@@ -44,7 +44,7 @@ const envSchema = z.object({
   RESUME_PARSER: z.enum(["deterministic", "ai"]).default("ai"),
   RESUME_AI_API_KEY: z.string().optional().default(""),
 
-  RATE_LIMIT_ADAPTER: z.enum(["memory"]).default("memory"),
+  RATE_LIMIT_ADAPTER: z.enum(["memory", "postgres"]).default("memory"),
 
   // Shared secret an external scheduler presents to POST/GET
   // /api/jobs/matching. Optional at the env-schema level (so environments

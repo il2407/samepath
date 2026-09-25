@@ -380,7 +380,7 @@ one:
 | Payments | `PaymentProvider` (`payments/provider.ts`) | `FakePaymentProvider` | `PAYMENT_PROVIDER=fake` |
 | Resume parsing | — | Deterministic heuristic parser | `RESUME_PARSER=deterministic\|ai` |
 | Malware scanning | `MalwareScanner` (`resumes/malware-scan.ts`) | `NoopScanner` (always reports clean) | — |
-| Rate limiting | — | In-memory fixed window (`shared/rate-limit.ts`) | `RATE_LIMIT_ADAPTER=memory` |
+| Rate limiting | — | In-memory fixed window (`shared/rate-limit.ts`); Postgres-backed for prod | `RATE_LIMIT_ADAPTER=memory\|postgres` |
 
 **Before any real deployment, at minimum:** switch `MAIL_ADAPTER` to
 `smtp` (the console adapter prints verification codes to stdout — see
@@ -452,11 +452,11 @@ through the items below first:
    S3-compatible store such as Cloudflare R2 via `S3_ENDPOINT`).
 5. A real malware scanner behind `MalwareScanner` before accepting
    uploads from untrusted users.
-6. `RATE_LIMIT_ADAPTER` backed by a shared store (Redis or similar) the
-   moment more than one server instance is running — the in-memory
-   limiter is correct for exactly one instance.
-7. Security headers (CSP, `X-Frame-Options`, HSTS) — not configured
-   anywhere yet; see `docs/security-hardening.md`.
+6. `RATE_LIMIT_ADAPTER=postgres` (shared `rate_limit_buckets` table) the
+   moment more than one server instance is running — always on Vercel.
+7. A nonce-based script CSP — baseline headers (HSTS, `X-Frame-Options`,
+   `frame-ancestors`, nosniff, etc.) are set in `next.config.ts`, but
+   `script-src` isn't restricted yet.
 8. A structured logger with PII redaction — today there's only two
    `console.error` calls, both PII-free by inspection, but there's no
    framework enforcing that stays true as the app grows.

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
+import { rateLimit } from "@/shared/rate-limit";
 import {
   createGroupByUser,
   leaveGroup,
@@ -16,6 +17,7 @@ export type ActionState = { ok: boolean; result?: JoinGroupResult; error?: strin
 
 export async function joinGroupAction(groupId: string): Promise<ActionState> {
   const user = await requireUser();
+  if (!(await rateLimit(`group:join:${user.id}`, 20, 60 * 60 * 1000)).allowed) return { ok: false, error: "יותר מדי פעולות. נסו שוב מאוחר יותר" };
   const result = await requestToJoinGroup(user.id, groupId);
   revalidatePath("/app/groups");
   revalidatePath(`/app/groups/${groupId}`);
@@ -51,6 +53,7 @@ export async function createUserGroupAction(input: unknown): Promise<CreateGroup
   const parsed = createGroupSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
+  if (!(await rateLimit(`group:create:${user.id}`, 5, 24 * 60 * 60 * 1000)).allowed) return { ok: false, error: "יותר מדי פעולות. נסו שוב מאוחר יותר" };
   const data: CreateGroupInput = parsed.data;
   const group = await createGroupByUser(user.id, data);
   revalidatePath("/app/groups");
@@ -69,6 +72,7 @@ export async function reportGroupAction(input: unknown): Promise<ActionState> {
   const parsed = reportSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
+  if (!(await rateLimit(`report:submit:${user.id}`, 10, 24 * 60 * 60 * 1000)).allowed) return { ok: false, error: "יותר מדי פעולות. נסו שוב מאוחר יותר" };
   await reportGroupConcern(user.id, parsed.data.groupId, parsed.data.category, parsed.data.description);
   revalidatePath(`/app/groups/${parsed.data.groupId}`);
   return { ok: true };

@@ -85,7 +85,7 @@ export async function submitContributionAction(experienceId: string, attestation
   const parsed = attestationSchema.safeParse(attestationInput);
   if (!parsed.success) return { ok: false, error: "יש לאשר את כל ההצהרות" };
 
-  const limited = rateLimit(`contribution:submit:${user.id}`, 5, 24 * 60 * 60 * 1000);
+  const limited = await rateLimit(`contribution:submit:${user.id}`, 5, 24 * 60 * 60 * 1000);
   if (!limited.allowed) return { ok: false, error: "יותר מדי תרומות היום. נסו שוב מחר" };
 
   const result = await submitForReview(user.id, experienceId, parsed.data);

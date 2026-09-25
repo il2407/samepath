@@ -17,7 +17,7 @@ export async function submitValidation(
   if (!experience || experience.status !== "PUBLISHED") return { ok: false, reason: "not_published" };
   if (experience.authorId === userId) return { ok: false, reason: "self_validation" };
 
-  const limited = rateLimit(`validation:${userId}`, 30, 60 * 60 * 1000);
+  const limited = await rateLimit(`validation:${userId}`, 30, 60 * 60 * 1000);
   if (!limited.allowed) return { ok: false, reason: "rate_limited" };
 
   try {

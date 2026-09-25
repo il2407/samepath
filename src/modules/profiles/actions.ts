@@ -216,7 +216,7 @@ export async function confirmOnboardingAction(): Promise<void> {
 export async function uploadProfilePhotoAction(formData: FormData): Promise<ActionState> {
   const user = await requireUser();
 
-  const limited = rateLimit(`profile-photo:upload:${user.id}`, 10, 60 * 60 * 1000);
+  const limited = await rateLimit(`profile-photo:upload:${user.id}`, 10, 60 * 60 * 1000);
   if (!limited.allowed) return { ok: false, error: "יותר מדי העלאות. נסו שוב בעוד כשעה" };
 
   const file = formData.get("file");

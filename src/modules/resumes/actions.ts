@@ -15,7 +15,7 @@ export async function uploadResumeAction(formData: FormData): Promise<ActionStat
 
   // Each upload runs real PDF/DOCX parsing and can create new company rows
   // — cheap enough per call to be a real spam/cost vector without a cap.
-  const limited = rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
+  const limited = await rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
   if (!limited.allowed) return { ok: false, error: "יותר מדי העלאות. נסו שוב בעוד כשעה" };
 
   const file = formData.get("file");
@@ -76,7 +76,7 @@ export async function retryResumeExtractionAction(uploadId: string): Promise<Act
   // Re-running extraction is comparable in cost to a fresh upload (same
   // parsing work), so it shares the upload rate-limit bucket rather than
   // getting its own unlimited allowance.
-  const limited = rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
+  const limited = await rateLimit(`resume:upload:${user.id}`, 10, 60 * 60 * 1000);
   if (!limited.allowed) return { ok: false, error: "יותר מדי נסיונות. נסו שוב בעוד כשעה" };
 
   const result = await retryResumeExtraction(user.id, uploadId);

@@ -22,9 +22,11 @@ submission the way a session-cookie-only endpoint would.
 
 ## Rate limiting
 
-`src/shared/rate-limit.ts` is a fixed-window, in-memory limiter — correct
-for a single-instance MVP, and explicitly documented as needing a shared
-store (Redis or similar) before running more than one server instance.
+`src/shared/rate-limit.ts` is a fixed-window limiter with two adapters:
+`memory` (per-process, dev/test) and `postgres` (one atomic upsert per
+check against the shared `rate_limit_buckets` table). Production on Vercel
+must use `RATE_LIMIT_ADAPTER=postgres`, since serverless instances don't
+share memory.
 
 Coverage as of this pass:
 
@@ -34,13 +36,12 @@ Coverage as of this pass:
 - Resume upload — 10/hour per user (`resumes/actions.ts`), added in this
   pass since it runs real PDF/DOCX parsing and can create company rows,
   making it a real cost/spam vector otherwise.
-
-**Gap:** connection messaging (`connections/service.ts` `sendMessage`),
-group join requests, and payment purchase attempts have no rate limit.
-Payment purchases are protected from double-charging by the existing
-idempotency key, but not from a burst of distinct attempts; messaging has
-no spam ceiling at all. Close these before opening the product to
-adversarial users, not before a private/internal pilot.
+- Connection messages — 60 per 10 minutes per user
+- Meeting proposals — 30/hour per user
+- Group join requests — 20/hour; user-created groups — 5/day
+- Reports (connections and groups, shared bucket) — 10/day per user
+- Access-pass purchase attempts — 10/hour per user (on top of the
+  payment idempotency key)
 
 ## Malware scanning for uploads
 
@@ -111,11 +112,12 @@ patched release lands; no action is urgent today.
 
 ## Security headers
 
-**Gap:** `next.config.ts` sets no security headers (CSP, `X-Frame-Options`,
-`Strict-Transport-Security`, `Referrer-Policy`). Fine for local dev; add a
-`headers()` config (or a platform-level equivalent, e.g. Vercel's
-`headers` in `vercel.json`) before any public deployment, especially a CSP
-given the app never needs third-party scripts.
+`next.config.ts` sets HSTS, `X-Content-Type-Options`, `X-Frame-Options:
+DENY`, `Referrer-Policy`, a restrictive `Permissions-Policy`, and a CSP
+limited to `frame-ancestors 'none'; object-src 'none'; base-uri 'self';
+form-action 'self'`, and drops `X-Powered-By`. **Remaining gap:** no
+`script-src` restriction — Next.js's inline bootstrap scripts need a
+nonce-based CSP set from middleware, which is a separate change.
 
 ## File storage
 
@@ -132,11 +134,11 @@ directly, so no presigned URLs are issued.
 | Area | Status |
 |---|---|
 | CSRF | Covered by framework default |
-| Rate limiting | Partial — messaging/groups/payments uncovered |
+| Rate limiting | Covered; Postgres adapter for multi-instance |
 | Malware scanning | Interface + status flow only, `NoopScanner` in place |
 | Structured logging | Not implemented; console mailer is a real pre-prod risk |
 | Safe error messages | Covered |
 | DB constraints | Covered, test-verified |
 | Dependency audit | Clean at runtime; 4 dev-tooling-only findings |
-| Security headers | Not implemented |
+| Security headers | Baseline set; script CSP pending |
 | File storage | Local adapter for dev; S3 adapter for production (private bucket) |

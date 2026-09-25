@@ -72,10 +72,10 @@ export async function loginWithPassword(
   password: string,
   requestIp: string | null,
 ): Promise<LoginResult> {
-  const perEmail = rateLimit(`auth:password:email:${email}`, 5, 60 * 60 * 1000);
+  const perEmail = await rateLimit(`auth:password:email:${email}`, 5, 60 * 60 * 1000);
   if (!perEmail.allowed) return { ok: false, reason: "rate_limited" };
   if (requestIp) {
-    const perIp = rateLimit(`auth:password:ip:${requestIp}`, 20, 60 * 60 * 1000);
+    const perIp = await rateLimit(`auth:password:ip:${requestIp}`, 20, 60 * 60 * 1000);
     if (!perIp.allowed) return { ok: false, reason: "rate_limited" };
   }
 
@@ -129,7 +129,7 @@ export async function resendEmailConfirmation(verificationId: string): Promise<S
   const verification = await prisma.emailVerification.findUnique({ where: { id: verificationId } });
   if (!verification || verification.purpose !== "REGISTER" || verification.consumedAt) return null;
 
-  const limited = !rateLimit(`auth:resend-code:${verification.userId}`, 5, 60 * 60 * 1000).allowed;
+  const limited = !(await rateLimit(`auth:resend-code:${verification.userId}`, 5, 60 * 60 * 1000)).allowed;
   if (limited) return null;
 
   return sendEmailConfirmation(verification.userId);
@@ -170,10 +170,10 @@ export async function confirmEmailCode(verificationId: string, code: string): Pr
 
 /** No-enumeration: always resolves regardless of whether the email is registered — the caller shows one generic message either way. */
 export async function requestPasswordReset(email: string, requestIp: string | null): Promise<void> {
-  const perEmail = rateLimit(`auth:password-reset:email:${email}`, 5, 60 * 60 * 1000);
+  const perEmail = await rateLimit(`auth:password-reset:email:${email}`, 5, 60 * 60 * 1000);
   if (!perEmail.allowed) return;
   if (requestIp) {
-    const perIp = rateLimit(`auth:password-reset:ip:${requestIp}`, 20, 60 * 60 * 1000);
+    const perIp = await rateLimit(`auth:password-reset:ip:${requestIp}`, 20, 60 * 60 * 1000);
     if (!perIp.allowed) return;
   }
 

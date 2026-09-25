@@ -1793,3 +1793,16 @@ model JobRun {
   @@index([jobName, startedAt])
   @@map("job_runs")
 }
+
+/// Shared fixed-window counters for RATE_LIMIT_ADAPTER=postgres — lets every
+/// serverless instance see the same counts. Expired rows are pruned lazily
+/// by shared/rate-limit.ts. Keys are opaque strings like
+/// "auth:password:email:<email>"; nothing else reads this table.
+model RateLimitBucket {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
+}

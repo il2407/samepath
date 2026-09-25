@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/auth/session";
+import { rateLimit } from "@/shared/rate-limit";
 import {
   acceptMeetingProposal,
   attachMeetLink,
@@ -35,6 +36,9 @@ export async function sendMessageAction(connectionId: string, body: string): Pro
   const trimmed = body.trim();
   if (!trimmed) return { ok: false, error: "ההודעה ריקה" };
   if (trimmed.length > 4000) return { ok: false, error: "ההודעה ארוכה מדי" };
+  if (!(await rateLimit(`message:send:${user.id}`, 60, 10 * 60 * 1000)).allowed) {
+    return { ok: false, error: "שלחתם הרבה הודעות ברצף. נסו שוב בעוד כמה דקות" };
+  }
 
   try {
     await sendMessage(user.id, connectionId, trimmed);
@@ -93,6 +97,7 @@ export async function reportConnectionAction(input: unknown): Promise<ActionStat
   const parsed = reportSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "נתונים לא תקינים" };
 
+  if (!(await rateLimit(`report:submit:${user.id}`, 10, 24 * 60 * 60 * 1000)).allowed) return { ok: false, error: "יותר מדי פעולות. נסו שוב מאוחר יותר" };
   await reportConnection(user.id, parsed.data.connectionId, parsed.data.category, parsed.data.description);
   revalidatePath(`/app/connections/${parsed.data.connectionId}`);
   return { ok: true };
@@ -261,6 +266,7 @@ export async function proposeMeetingAction(input: unknown): Promise<ActionState>
   const user = await requireUser();
   const parsed = proposeMeetingSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "נתונים לא תקינים" };
+  if (!(await rateLimit(`meeting:propose:${user.id}`, 30, 60 * 60 * 1000)).allowed) return { ok: false, error: "יותר מדי פעולות. נסו שוב מאוחר יותר" };
 
   try {
     await proposeMeeting(user.id, parsed.data.connectionId, {

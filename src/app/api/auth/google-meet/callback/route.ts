@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
 
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip");
   if (ip) {
-    const limited = rateLimit(`auth:google-meet:ip:${ip}`, 20, 60 * 60 * 1000);
+    const limited = await rateLimit(`auth:google-meet:ip:${ip}`, 20, 60 * 60 * 1000);
     if (!limited.allowed) return returnError(returnTo, "rate_limited");
   }
 
