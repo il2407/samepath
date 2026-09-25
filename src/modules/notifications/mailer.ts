@@ -1,4 +1,5 @@
 import { env } from "@/shared/env";
+import { logger } from "@/shared/logger";
 
 export interface MailMessage {
   to: string;
@@ -75,7 +76,7 @@ class SmtpMailer implements Mailer {
         text: message.text,
       });
     } catch (error) {
-      console.error(`SmtpMailer: failed to send mail to ${message.to}:`, error);
+      logger.error("SmtpMailer: failed to send mail", { error });
       throw error;
     }
   }

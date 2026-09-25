@@ -8,6 +8,7 @@ import { toMonthString, type StoredExtractedResumeData } from "@/modules/resumes
 import { resolveOrCreateCompanyByRawName } from "@/modules/companies/service";
 import { env } from "@/shared/env";
 import type { Prisma, ResumeUploadStatus } from "@/generated/prisma/client";
+import { logger } from "@/shared/logger";
 
 const ALLOWED_MIME_TYPES = new Set([PDF_MIME_TYPE, DOCX_MIME_TYPE]);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -59,6 +60,7 @@ export async function uploadResume(userId: string, file: UploadedFile): Promise<
   await prisma.resumeUpload.update({ where: { id: upload.id }, data: { status: "SCANNING" } });
   const scanResult = await getMalwareScanner().scan(file.buffer, file.filename);
   if (!scanResult.clean) {
+    logger.warn("resume upload rejected by scanner", { userId, uploadId: upload.id, reason: scanResult.reason });
     await storage.delete(storageKey);
     await prisma.resumeUpload.update({ where: { id: upload.id }, data: { status: "REJECTED", deletedAt: new Date() } });
     return { ok: false, error: "הקובץ נדחה על ידי בדיקת אבטחה" };
@@ -286,7 +288,7 @@ export async function discardResumeUpload(userId: string, uploadId: string): Pro
     try {
       await getStorage().delete(upload.storageKey);
     } catch (error) {
-      console.error("failed to delete discarded resume file", { uploadId, error });
+      logger.error("failed to delete discarded resume file", { uploadId, error });
     }
   }
   await prisma.resumeUpload.update({ where: { id: uploadId }, data: { status: "DELETED", deletedAt: new Date() } });

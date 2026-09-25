@@ -6,6 +6,7 @@ import { createNotification } from "@/modules/notifications/service";
 import { NOTIFICATION_TYPES } from "@/modules/notifications/types";
 import { getMailer } from "@/modules/notifications/mailer";
 import { accountApprovedEmail } from "@/modules/notifications/email-templates";
+import { logger } from "@/shared/logger";
 
 // Account approval + blocking. New registrations land in PENDING_APPROVAL
 // (auth/service.ts) and are match-ineligible until approved here; a blocked
@@ -88,7 +89,7 @@ export async function approveUser(userId: string): Promise<UserActionResult> {
   try {
     await getMailer().send({ to: user.email, ...accountApprovedEmail() });
   } catch (error) {
-    console.error("[admin/users] failed to email account approval", { userId, error });
+    logger.error("[admin/users] failed to email account approval", { userId, error });
   }
   return { ok: true };
 }
@@ -162,7 +163,7 @@ export async function getResumeFileForAdmin(uploadId: string) {
     const data = await getStorage().get(upload.storageKey);
     return { data, mimeType: upload.mimeType, filename: upload.originalFilename };
   } catch (error) {
-    console.error("[admin/users] resume file missing from storage", { uploadId, error });
+    logger.error("[admin/users] resume file missing from storage", { uploadId, error });
     return null;
   }
 }

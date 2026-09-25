@@ -80,22 +80,46 @@ interface (ClamAV needs a long-running daemon, which Vercel can't host).
 
 ## Structured logging & redaction
 
-There is no structured logging framework (pino/winston/etc.) in this MVP —
-just a couple of `console.error` calls in `resumes/service.ts` for
-best-effort file-cleanup failures, and both log only an opaque `uploadId`,
-never PII. Grepped for every `console.*` call in `src/`; nothing else logs
-outside the mailer.
+All server-side logging goes through `src/shared/logger.ts`: one JSON
+object per line (`level`, `time`, `msg`, plus context), which is what
+Vercel's runtime logs and log drains index. Redaction is built in, not
+opt-in — every context object passes through `redact()` before it's
+serialized:
 
-**Real gap, not hypothetical:** `MAIL_ADAPTER` defaults to `console`
-(`src/modules/notifications/mailer.ts`), which prints the full verification
-email — including the recipient's address and the 6-digit code — to
-stdout. That is required for local dev (there is no external mail account
-to send through), but it means **`MAIL_ADAPTER=smtp` is not optional
-before deployment** — leaving the console adapter on in any environment
-with shared or persisted logs would leak login codes. Before production:
-switch to the SMTP adapter and add a real structured logger with
-request-ID correlation and PII redaction (email addresses, session
-tokens, resume text) baked in from the start, not bolted on later.
+- values under keys that look like personal data or secrets (`email`,
+  `password`, `token`, `secret`, `session`, `cookie`, `phone`, `name`,
+  `address`, `code`, …) become `[redacted]`, at any depth;
+- email addresses and `Bearer …` tokens are scrubbed from *any* string,
+  including error messages and stacks (a mail provider's "550 mailbox
+  x@y unavailable" doesn't leak the address);
+- `Error`s are serialized to `name` / `message` / `stack` / `code` /
+  `cause`.
+
+Callers log opaque IDs (`userId`, `uploadId`, …) rather than personal
+fields. Résumé filenames and text are never logged.
+
+**Unhandled errors.** `src/instrumentation.ts#onRequestError` logs every
+uncaught server error (Server Components, route handlers, Server Actions)
+with method, path — query string dropped, since it can carry magic-link
+tokens or an OAuth `code` — route, and the error `digest`. The root error
+boundaries (`src/app/error.tsx`, `src/app/global-error.tsx`) show the user
+a generic Hebrew message plus that digest as a support reference code, so
+a report can be matched to its log line. Upload-scan rejections are logged
+at `warn` with the scanner's reason.
+
+**Uptime.** `GET /api/health` returns `200 {"status":"ok"}` when Postgres
+is reachable and `503` otherwise, revealing nothing else. Point an uptime
+monitor (Vercel's own, Better Stack, UptimeRobot, …) at it.
+
+**Not included, by design:** an error-tracking SaaS (Sentry etc.) needs an
+account and DSN that belong to the operator; Vercel's built-in logs have
+short retention on Hobby, so for anything longer configure a log drain.
+Adding Sentry later means calling its capture function from
+`onRequestError` — the one choke point already exists.
+
+**Still true:** `MAIL_ADAPTER=console` (the local default) prints the full
+verification email — recipient and 6-digit code — to stdout.
+`MAIL_ADAPTER=smtp` is **not optional** in any deployed environment.
 
 ## Safe error messages
 
@@ -161,7 +185,7 @@ directly, so no presigned URLs are issued.
 | CSRF | Covered by framework default |
 | Rate limiting | Covered; Postgres adapter for multi-instance |
 | Malware scanning | Structural in-process inspection (not signature AV) |
-| Structured logging | Not implemented; console mailer is a real pre-prod risk |
+| Structured logging | JSON-line logger with built-in redaction, `onRequestError` hook, error boundaries, `/api/health`; console mailer must be off in prod |
 | Safe error messages | Covered |
 | DB constraints | Covered, test-verified |
 | Dependency audit | Clean at runtime; 4 dev-tooling-only findings |

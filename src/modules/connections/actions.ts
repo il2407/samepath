@@ -28,6 +28,7 @@ import {
 } from "@/modules/connections/service";
 import { PRACTICE_SESSION_CATEGORIES, type PracticeSessionCategorySlug } from "@/modules/guides/service";
 import type { ConnectionReason } from "@/generated/prisma/client";
+import { logger } from "@/shared/logger";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -248,7 +249,7 @@ export async function setMyIntroRequirementAction(input: unknown): Promise<Actio
  */
 function meetingProposalErrorMessage(error: unknown): string {
   if (error instanceof MeetingProposalError) return error.message;
-  console.error("meeting proposal action failed", error);
+  logger.error("meeting proposal action failed", { error });
   return "משהו השתבש. נסו שוב";
 }
 

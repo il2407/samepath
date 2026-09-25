@@ -3,6 +3,7 @@ import path from "node:path";
 import { prisma } from "@/shared/db";
 import { getStorage, generatePhotoStorageKey } from "@/shared/storage";
 import { getMalwareScanner } from "@/modules/resumes/malware-scan";
+import { logger } from "@/shared/logger";
 
 const MAX_SIZE_BYTES = 3 * 1024 * 1024;
 
@@ -105,7 +106,10 @@ export async function uploadProfilePhoto(userId: string, file: UploadedPhotoFile
   if (!validation.ok) return validation;
 
   const scanResult = await getMalwareScanner().scan(file.buffer, file.filename);
-  if (!scanResult.clean) return { ok: false, error: "הקובץ נדחה על ידי בדיקת אבטחה" };
+  if (!scanResult.clean) {
+    logger.warn("profile photo rejected by scanner", { userId, reason: scanResult.reason });
+    return { ok: false, error: "הקובץ נדחה על ידי בדיקת אבטחה" };
+  }
 
   const profile = await prisma.professionalProfile.findUniqueOrThrow({ where: { userId } });
   const existing = await prisma.identityDisclosurePreference.findUnique({ where: { profileId: profile.id } });
@@ -122,7 +126,7 @@ export async function uploadProfilePhoto(userId: string, file: UploadedPhotoFile
 
   if (existing?.photoStorageKey) {
     await storage.delete(existing.photoStorageKey).catch((error) => {
-      console.error("failed to delete replaced profile photo", { userId, error });
+      logger.error("failed to delete replaced profile photo", { userId, error });
     });
   }
 
@@ -135,7 +139,7 @@ export async function deleteProfilePhoto(userId: string): Promise<void> {
   if (!existing?.photoStorageKey) return;
 
   await getStorage().delete(existing.photoStorageKey).catch((error) => {
-    console.error("failed to delete profile photo", { userId, error });
+    logger.error("failed to delete profile photo", { userId, error });
   });
 
   await prisma.identityDisclosurePreference.update({

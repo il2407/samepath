@@ -7,6 +7,7 @@ import { createNotification } from "@/modules/notifications/service";
 import { NOTIFICATION_TYPES } from "@/modules/notifications/types";
 import { getMailer } from "@/modules/notifications/mailer";
 import { contributionDecisionEmail, type ContributionDecision } from "@/modules/notifications/email-templates";
+import { logger } from "@/shared/logger";
 
 const DEFAULT_PUBLICATION_DELAY_DAYS = 14;
 
@@ -35,7 +36,7 @@ async function notifyAuthorOfDecision(
     const email = contributionDecisionEmail({ decision, companyName: experience.company.canonicalName, message });
     await getMailer().send({ to: experience.author.email, ...email });
   } catch (error) {
-    console.error("[moderation] failed to email contribution decision", { experienceId, error });
+    logger.error("[moderation] failed to email contribution decision", { experienceId, error });
   }
 }
 

@@ -12,6 +12,7 @@ import { validateMeetLink } from "@/modules/connections/meeting-link";
 import { getGoogleMeetClient } from "@/modules/auth/google-meet";
 import { decryptSecret, encryptSecret } from "@/modules/auth/crypto";
 import { Prisma, type ConnectionReason, type IntroMeetingStance } from "@/generated/prisma/client";
+import { logger } from "@/shared/logger";
 
 /**
  * Reads the actual photo bytes back out of storage as a data URL — never
@@ -25,7 +26,7 @@ async function loadPhotoDataUrl(disclosure: { sharePhotoPostMatch: boolean; phot
     const buffer = await getStorage().get(disclosure.photoStorageKey);
     return `data:${disclosure.photoMimeType ?? "image/jpeg"};base64,${buffer.toString("base64")}`;
   } catch (error) {
-    console.error("failed to load profile photo for connection", error);
+    logger.error("failed to load profile photo for connection", { error });
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/shared/db";
 import { getStorage } from "@/shared/storage";
+import { logger } from "@/shared/logger";
 
 export async function exportAccountData(userId: string) {
   const [user, profile, payments, accessPasses, contributions, creditLedger, connections, blockedCompanies, blockedUsers] =
@@ -70,7 +71,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     try {
       await storage.delete(upload.storageKey);
     } catch (error) {
-      console.error("failed to delete resume file during account deletion", { userId, error });
+      logger.error("failed to delete resume file during account deletion", { userId, error });
     }
   }
 

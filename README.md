@@ -517,7 +517,8 @@ here rather than silently assumed away:
       without it)
 - [ ] Shared-store rate limiting if running >1 instance
 - [ ] Security headers configured
-- [ ] Structured logging + PII redaction
+- [x] Structured logging + PII redaction (`src/shared/logger.ts`, `src/instrumentation.ts`)
+- [ ] Uptime monitor pointed at `/api/health`; log drain if Vercel's log retention is too short
 - [ ] `pnpm audit` clean (or documented as dev-tooling-only, as it is
       today — see `docs/security-hardening.md`)
 - [ ] Real `SESSION_SECRET`, never the example value, rotated per
