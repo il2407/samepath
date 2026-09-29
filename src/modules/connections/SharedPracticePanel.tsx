@@ -26,6 +26,8 @@ export function PracticeSummary({ content }: { content: PracticeContent }) {
   );
 }
 
+const IDLE_STOP_MS = 5 * 60 * 1000;
+
 export function SharedPracticePanel({
   connectionId,
   practice,
@@ -42,14 +44,32 @@ export function SharedPracticePanel({
   const router = useRouter();
   useEffect(() => {
     if (!active) return;
+    // Each refresh hits the DB, so an idle open tab must stop polling —
+    // otherwise it keeps a scale-to-zero database awake around the clock.
+    let lastActivity = Date.now();
+    const markActive = () => {
+      lastActivity = Date.now();
+    };
     const refresh = () => {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastActivity > IDLE_STOP_MS) return;
+      router.refresh();
+    };
+    const onFocus = () => {
+      markActive();
+      refresh();
     };
     const timer = setInterval(refresh, 20000);
-    window.addEventListener("focus", refresh);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pointerdown", markActive);
+    window.addEventListener("keydown", markActive);
+    window.addEventListener("scroll", markActive, { passive: true });
     return () => {
       clearInterval(timer);
-      window.removeEventListener("focus", refresh);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pointerdown", markActive);
+      window.removeEventListener("keydown", markActive);
+      window.removeEventListener("scroll", markActive);
     };
   }, [active, router]);
   const catalog = `/app/guides?connection=${encodeURIComponent(connectionId)}`;
